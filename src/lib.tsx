@@ -60,6 +60,10 @@ export function LangProvider({ children }: { children: ReactNode }) {
 export function useLang() {
   return useContext(LangCtx);
 }
+/** Separator between the Thai and Chinese halves of a bilingual label (renders like a normal space in plain text). */
+export const BI_SEP = '\u2002';
+/** Invisible marker closing the Chinese half, so text appended after a label (codes, counts) is not styled as Chinese. */
+export const BI_END = '\u2060';
 /** t(english, thai, chinese) */
 export function useT() {
   const { lang } = useLang();
@@ -67,14 +71,15 @@ export function useT() {
     if (lang === 'en') return en;
     if (lang === 'th') return th || en;
     if (lang === 'zh') return zh || th || en;
-    return th && zh ? `${th} ${zh}` : th || zh || en;
+    // Thai + Chinese are joined with an EN SPACE so <Bi> can show the Chinese part as a quieter second line.
+    return th && zh ? `${th}${BI_SEP}${zh}${BI_END}` : th || zh || en;
   }, [lang]);
 }
 export function pick(o: { th?: string; zh?: string; en?: string }, lang: Lang) {
   if (lang === 'en') return o.en || o.th || '';
   if (lang === 'zh') return o.zh || o.th || '';
   if (lang === 'th') return o.th || o.en || '';
-  return [o.th, o.zh].filter(Boolean).join(' ');
+  return o.th && o.zh ? `${o.th}${BI_SEP}${o.zh}${BI_END}` : o.th || o.zh || '';
 }
 
 // ---------- session + lookups

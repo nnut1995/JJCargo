@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { api, useApi, useApp, useCan, useT, money, monthStart, today } from '../lib';
-import { Page, Card, Grid, Field, Table, BankPick, DateRange, Badge, Modal, Stat, PrintModal, useAction } from '../ui';
+import { Page, Card, Grid, Field, Table, BankPick, DateRange, Badge, Modal, Stat, PrintModal, useAction, useAsk } from '../ui';
+import { Printer, Check, Plus, RefreshCw } from 'lucide-react';
 import { CrudPage } from './Crud';
 
 /** ViewBankStatementForm */
@@ -13,6 +14,7 @@ export function BankStatements() {
   const [edit, setEdit] = useState<any>(null);
   const [print, setPrint] = useState(false);
   const { run } = useAction();
+  const { ask } = useAsk();
   const save = async () => {
     const body = { ...edit, bank_id: q.bank_id, income: edit.kind === 'in' ? edit.amount : 0, expense: edit.kind === 'out' ? edit.amount : 0 };
     if (await run(() => (edit.id ? api(`/r/bank_statements/${edit.id}`, { method: 'PUT', body }) : api('/r/bank_statements', { body })))) { setEdit(null); reload(); }
@@ -29,8 +31,8 @@ export function BankStatements() {
   ];
   return (
     <Page title={t('Bank statements', 'รายการเดินบัญชี', '银行流水')} actions={<>
-      <button onClick={() => setPrint(true)}>🖨 {t('Print', 'ปริ้น', '打印')}</button>
-      <button className="primary" disabled={!q.bank_id} onClick={() => setEdit({ date: today(), kind: 'in', amount: '' })}>+ {t('Add line', 'เพิ่มรายการ', '新增')}</button></>}>
+      <button onClick={() => setPrint(true)}><Printer size={16} aria-hidden /> {t('Print', 'ปริ้น', '打印')}</button>
+      <button className="primary" disabled={!q.bank_id} onClick={() => setEdit({ date: today(), kind: 'in', amount: '' })}><Plus size={16} aria-hidden /> {t('Add line', 'เพิ่มรายการ', '新增')}</button></>}>
       <Card>
         <Grid cols={6}>
           <Field label={t('Account', 'บัญชี', '帐户')}><BankPick value={q.bank_id} onChange={(v) => setQ({ ...q, bank_id: v })} activeOnly={false} /></Field>
@@ -49,7 +51,7 @@ export function BankStatements() {
       )}
       <Table rows={data?.rows} columns={[...cols, { key: 'x', label: '', render: (r: any) => !r.payment_id && !r.source && can.verify('bank_statement') && <span className="row" onClick={(e) => e.stopPropagation()}>
         <button className="link" onClick={() => setEdit({ ...r, kind: r.income ? 'in' : 'out', amount: r.income || r.expense })}>{t('Edit', 'แก้ไข', '修改')}</button>
-        <button className="link danger" onClick={async () => { if (confirm('?') && await run(() => api(`/r/bank_statements/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button></span> }]} />
+        <button className="link danger" onClick={async () => { if (await ask(t('Delete this item?', 'ต้องการลบรายการนี้?', '你确定要删除吗?'), { danger: true }) && await run(() => api(`/r/bank_statements/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button></span> }]} />
       {edit && (
         <Modal open title={t('Statement line', 'รายการเดินบัญชี', '银行流水')} onClose={() => setEdit(null)} footer={<button className="primary" onClick={save}>{t('Save', 'บันทึก', '保存')}</button>}>
           <Grid cols={2}>
@@ -214,7 +216,7 @@ export function BankTotal() {
     { key: 'balance', label: t('Balance', 'ยอดคงเหลือ', '余额'), money: true, sum: true },
   ];
   return (
-    <Page title={t('Total money', 'สรุปยอดเงินทั้งหมด', '总余额')} actions={<button onClick={reload}>↻</button>}>
+    <Page title={t('Total money', 'สรุปยอดเงินทั้งหมด', '总余额')} actions={<button onClick={reload}><RefreshCw size={16} aria-hidden /><span className="sr-only">Refresh</span></button>}>
       {data && (<>
         <div className="stats">
           <Stat label={t('All Thai accounts (THB)', 'เงินไทยทั้งหมด', '泰铢')} value={money(data.totalThb)} />
@@ -253,9 +255,9 @@ export function BankAccounts() {
         { key: 'account_name', label: t('Account name', 'ชื่อบัญชี', '帐户名') },
         { key: 'account_number', label: t('Number', 'เลขบัญชี', '帐号') },
         { key: 'is_thai', label: t('Currency', 'หน่วยเงิน', '币种'), render: (r) => r.is_thai ? 'THB' : 'CNY' },
-        { key: 'is_cash', label: t('Cash', 'เงินสด', '现金'), render: (r) => r.is_cash ? '✓' : '' },
+        { key: 'is_cash', label: t('Cash', 'เงินสด', '现金'), render: (r) => r.is_cash ? <Check size={16} aria-label="yes" /> : '' },
         { key: 'opening_balance', label: t('Opening', 'ยอดเริ่ม', '期初'), money: true },
-        { key: 'customer_visible', label: t('Customer sees', 'ลูกค้าเห็น', '客户可见'), render: (r) => r.customer_visible ? '✓' : '' },
+        { key: 'customer_visible', label: t('Customer sees', 'ลูกค้าเห็น', '客户可见'), render: (r) => r.customer_visible ? <Check size={16} aria-label="yes" /> : '' },
         { key: 'is_active', label: t('Status', 'สถานะ', '状态'), render: (r) => r.is_active ? <Badge tone="good">{t('Active', 'ใช้งาน', '启用')}</Badge> : <Badge>{t('Closed', 'ปิดใช้งาน', '停用')}</Badge> },
       ]} />
   );

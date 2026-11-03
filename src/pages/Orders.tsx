@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useLang, useT, money, pick, today, monthStart } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, StylePick, DateRange, Badge, useAction } from '../ui';
+import { Page, Card, Grid, Field, Table, CustomerPick, StylePick, DateRange, Badge, useAction, useAsk } from '../ui';
+import { Check, Plus } from 'lucide-react';
 
 const emptyLine = () => ({ key: Math.random(), product_id: '', style_id: null as any, quantity: 1, unit_price: 0 });
 
@@ -30,7 +31,7 @@ export function OrderEdit() {
     else nav(`/orders?id=${id || r.id}`);
   };
   return (
-    <Page title={id ? `${t('Order', 'ออเดอร์', '订单')} ${o.order_no || '#' + id}` : t('New order', 'เพิ่มออเดอร์ใหม่', '新订单')}
+    <Page back={id ? '/orders' : undefined} title={id ? `${t('Order', 'ออเดอร์', '订单')} ${o.order_no || '#' + id}` : t('New order', 'เพิ่มออเดอร์ใหม่', '新订单')}
       actions={<>{!id && <button disabled={busy} onClick={() => save(true)}>{t('Save & new', 'บันทึกแล้วเพิ่มต่อ', '保存并新增')}</button>}
         <button className="primary" disabled={busy} onClick={() => save(false)}>{t('Save', 'บันทึก', '保存')}</button></>}>
       <Card>
@@ -49,7 +50,7 @@ export function OrderEdit() {
           <Field label={t('Deposit (CNY)', 'มัดจำ', '定金')}><input type="number" step="any" value={o.deposit ?? 0} onChange={(e) => setO({ ...o, deposit: e.target.value })} /></Field>
         </Grid>
       </Card>
-      <Card title={t('Lines', 'รายการสินค้า', '产品')} actions={<button onClick={() => setItems([...items, emptyLine()])}>+ {t('Add line', 'เพิ่มรายการ', '新增项目')}</button>}>
+      <Card title={t('Lines', 'รายการสินค้า', '产品')} actions={<button onClick={() => setItems([...items, emptyLine()])}><Plus size={16} aria-hidden /> {t('Add line', 'เพิ่มรายการ', '新增项目')}</button>}>
         <Table rowKey="key" rows={items} columns={[
           { key: 'n', label: '#', render: (_r, i) => i + 1, width: 40 },
           { key: 'product_id', label: t('Product id / link', 'รหัสสินค้า', '款号'), render: (r) => <input value={r.product_id || ''} onChange={(e) => upd(r.key, { product_id: e.target.value })} /> },
@@ -79,12 +80,13 @@ export function OrderSearch() {
   const [open, setOpen] = useState<number | null>(sp.get('id') ? Number(sp.get('id')) : null);
   const detail = useApi<any>(open ? `/orders/${open}` : null);
   const { run } = useAction();
+  const { ask } = useAsk();
   const del = async (id: number) => {
-    if (!confirm(t('Delete this order?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'))) return;
+    if (!(await ask(t('Delete this order?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'), { danger: true }))) return;
     if (await run(() => api(`/orders/${id}`, { method: 'DELETE' }), t('Deleted', 'ลบแล้ว', '已删除'))) { setOpen(null); reload(); }
   };
   return (
-    <Page title={t('Search orders', 'ค้นหาออเดอร์', '搜索订单')} actions={<Link to="/orders/new"><button className="primary">+ {t('New order', 'เพิ่มออเดอร์', '新订单')}</button></Link>}>
+    <Page title={t('Search orders', 'ค้นหาออเดอร์', '搜索订单')} actions={<Link to="/orders/new"><button className="primary"><Plus size={16} aria-hidden /> {t('New order', 'เพิ่มออเดอร์', '新订单')}</button></Link>}>
       <Card>
         <Grid cols={5}>
           <Field label={t('Customer', 'ลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => setQ({ ...q, customer_id: v })} /></Field>
@@ -120,7 +122,7 @@ export function OrderSearch() {
             { key: 't', label: t('Total', 'รวม', '总价'), money: true, render: (r) => money(r.quantity * r.unit_price) },
             { key: 'received_qty', label: t('Billed', 'เปิดบิลแล้ว', '已开单'), align: 'right' },
             { key: 'packed_qty', label: t('Packed', 'แพคแล้ว', '打包了'), align: 'right' },
-            { key: 'left', label: t('Not received yet', 'ยังไม่ได้รับ', '未收'), align: 'right', render: (r) => { const left = r.quantity - Math.max(r.received_qty, r.packed_qty); return left > 0 ? <b className="neg">{left}</b> : <Badge tone="good">✓</Badge>; } },
+            { key: 'left', label: t('Not received yet', 'ยังไม่ได้รับ', '未收'), align: 'right', render: (r) => { const left = r.quantity - Math.max(r.received_qty, r.packed_qty); return left > 0 ? <b className="neg">{left}</b> : <Badge tone="good"><Check size={12} aria-label="done" /></Badge>; } },
           ]} />
         </Card>
       )}
@@ -132,13 +134,15 @@ export function OrderSearch() {
 export function Lookup() {
   const t = useT();
   const { lang } = useLang();
-  const [q, setQ] = useState('');
-  const [query, setQuery] = useState('');
+  const [sp, setSp] = useSearchParams();
+  const [q, setQ] = useState(sp.get('q') || '');
+  const [query, setQuery] = useState(sp.get('q') || '');
+  useEffect(() => { const v = sp.get('q') || ''; setQ(v); setQuery(v); }, [sp]);
   const { data } = useApi<any>(query ? '/lookup' : null, { q: query });
   return (
     <Page title={t('Lookup order / bill', 'ค้นหารายละเอียด', '查找账单')}>
       <Card>
-        <form className="row" onSubmit={(e) => { e.preventDefault(); setQuery(q.trim()); }}>
+        <form className="row" onSubmit={(e) => { e.preventDefault(); setQuery(q.trim()); setSp(q.trim() ? { q: q.trim() } : {}, { replace: true }); }}>
           <input style={{ maxWidth: 420 }} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Order no., bill code or product id', 'เลขออเดอร์ / เลขบิล / รหัสสินค้า', '单号 / 划款单 / 款号')} />
           <button className="primary">{t('Search', 'ค้นหา', '搜索')}</button>
         </form>

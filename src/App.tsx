@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { BrowserRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { MENU } from '../shared/menus';
-import { api, AppProvider, pick, useLang, useT, type Lookups, type User, type Lang } from './lib';
+import { useCallback, useEffect, useState } from 'react';
+import { BrowserRouter, Link, Route, Routes } from 'react-router-dom';
+import { api, AppProvider, useT, type Lookups, type User } from './lib';
 import { useAction } from './ui';
+import { Shell, LangSwitch } from './nav';
 import Dashboard from './pages/Dashboard';
 import { OrderEdit, OrderSearch, Lookup } from './pages/Orders';
 import { PackageEdit, PackageSearch, PackageView } from './pages/Packages';
@@ -26,61 +26,20 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
         const u = await run(() => api<User>('/login', { body: { username, password } }), false);
         if (u) onLogin(u);
       }}>
-        <div className="brand big"><span className="logo">JJ</span> Cargo</div>
-        <p className="muted">{t('Back office · China → Thailand cargo', 'ระบบหลังบ้าน ขนส่งจีน-ไทย', '后台系统 中国 → 泰国')}</p>
+        <div className="login-brand"><span className="logo big">JJ</span><div><div className="login-name">JJ Cargo</div>
+          <div className="muted">{t('Back office · China → Thailand cargo', 'ระบบหลังบ้าน ขนส่งจีน-ไทย', '后台系统 中国 → 泰国')}</div></div></div>
         <label className="field"><span className="label">{t('Username', 'ชื่อผู้ใช้', '用户名')}</span><input autoFocus value={username} onChange={(e) => setU(e.target.value)} autoComplete="username" /></label>
         <label className="field"><span className="label">{t('Password', 'รหัสผ่าน', '密码')}</span><input type="password" value={password} onChange={(e) => setP(e.target.value)} autoComplete="current-password" /></label>
-        <button className="primary" disabled={busy}>{t('Sign in', 'เข้าสู่ระบบ', '登录')}</button>
-        <LangSwitch />
+        <button className="primary block" disabled={busy || !username || !password}>{busy ? t('Signing in…', 'กำลังเข้าสู่ระบบ…', '登录中…') : t('Sign in', 'เข้าสู่ระบบ', '登录')}</button>
+        <div className="login-foot"><span className="muted">{t('Language', 'ภาษา', '语言')}</span><LangSwitch /></div>
       </form>
     </div>
   );
 }
 
-function LangSwitch() {
-  const { lang, setLang } = useLang();
-  return (
-    <select className="lang" value={lang} onChange={(e) => setLang(e.target.value as Lang)} aria-label="Language">
-      <option value="thzh">ไทย + 中文</option>
-      <option value="th">ไทย</option>
-      <option value="zh">中文</option>
-      <option value="en">English</option>
-    </select>
-  );
-}
-
-function Shell({ user, children, onLogout }: { user: User; children: ReactNode; onLogout: () => void }) {
-  const { lang } = useLang();
+function NotFound() {
   const t = useT();
-  const loc = useLocation();
-  const [navOpen, setNavOpen] = useState(false);
-  useEffect(() => setNavOpen(false), [loc.pathname]);
-  const can = (k: string) => !!user.is_admin || user.menus.includes(k);
-  return (
-    <div className="shell">
-      <header className="topbar">
-        <button className="icon menu-btn" onClick={() => setNavOpen((o) => !o)} aria-label="Menu">☰</button>
-        <div className="brand"><span className="logo">JJ</span> Cargo</div>
-        <div className="spacer" />
-        <LangSwitch />
-        <span className="who">{user.name}</span>
-        <button onClick={onLogout}>{t('Sign out', 'ออกจากระบบ', '退出')}</button>
-      </header>
-      <nav className={`sidebar${navOpen ? ' open' : ''}`}>
-        {MENU.map((g) => {
-          const items = g.items.filter((i) => can(i.key));
-          if (!items.length) return null;
-          return (
-            <div key={g.key} className="nav-group">
-              <div className="nav-title">{pick(g, lang)}</div>
-              {items.map((i) => <NavLink key={i.key} to={i.path} end={i.path === '/' || i.path === '/orders' || i.path === '/packages' || i.path === '/payments' || i.path === '/packing' || i.path === '/shipments'}>{pick(i, lang)}</NavLink>)}
-            </div>
-          );
-        })}
-      </nav>
-      <main className="content">{children}</main>
-    </div>
-  );
+  return <div className="page"><div className="empty big"><h1>404</h1><p>{t('This page does not exist.', 'ไม่พบหน้านี้', '页面不存在')}</p><Link to="/">{t('Back to dashboard', 'กลับหน้าแรก', '返回首页')}</Link></div></div>;
 }
 
 export default function App() {
@@ -97,7 +56,7 @@ export default function App() {
 
   if (user === undefined) return null;
   if (!user) return <Login onLogin={setUser} />;
-  if (!lookups) return <div className="loading">Loading…</div>;
+  if (!lookups) return <div className="loading"><span className="logo">JJ</span><span className="spinner" aria-label="Loading" /></div>;
   const logout = async () => { await api('/logout', { body: {} }); setUser(null); };
   return (
     <AppProvider value={{ user, lookups, reloadLookups }}>
@@ -146,7 +105,7 @@ export default function App() {
             <Route path="/permissions" element={<Permissions />} />
             <Route path="/verify-settings" element={<VerifySettings />} />
             <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<div className="page"><h1>404</h1></div>} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </Shell>
       </BrowserRouter>

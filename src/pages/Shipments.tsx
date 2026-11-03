@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, useApi, useApp, useLang, useT, money, pick, today, cbm, sum } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, DateRange, Badge, Modal, PrintModal, useAction } from '../ui';
+import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, DateRange, Badge, Modal, PrintModal, useAction, useAsk, Empty } from '../ui';
+import { Printer, Check, Plus, X, Pencil } from 'lucide-react';
 import { CrudPage } from './Crud';
 import { SHIPMENT_STATUSES } from '../../shared/statuses';
 
@@ -97,14 +98,14 @@ export function LoadContainer() {
         <Grid cols={3}>
           <Field label={t('Shipment round', 'รอบขนส่ง', '发货单')}><ShipmentPick value={sid} onChange={setSid} /></Field>
           <Field label={t('Off-China date', 'วันที่ขึ้นตู้', '上车日期')}><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-          <Field label=" "><Link to="/shipments">+ {t('New round', 'เพิ่มรอบขนส่ง', '新增发货单')}</Link></Field>
+          <Field label=" "><Link to="/shipments"><Plus size={16} aria-hidden /> {t('New round', 'เพิ่มรอบขนส่ง', '新增发货单')}</Link></Field>
         </Grid>
         {sid && (
           <form onSubmit={scan} style={{ marginTop: 12 }}>
             <input ref={ref} className="scan" autoFocus value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('Scan or type box code (PK…) and press Enter', 'สแกนเลขกระสอบแล้วกด Enter', '扫描包号')} />
           </form>
         )}
-        {last && <p><Badge tone="good">✓ {last.packing_code}</Badge> {last.customer_code} · {last.weight} kg · CTN {last.ctn}/{last.no}</p>}
+        {last && <p><Badge tone="good"><Check size={12} aria-hidden /> {last.packing_code}</Badge> {last.customer_code} · {last.weight} kg · CTN {last.ctn}/{last.no}</p>}
       </Card>
       {sid && (
         <Card title={`${t('On this round', 'ในรอบนี้', '本发货单')} · ${loaded.data?.length || 0} ${t('boxes', 'กระสอบ', '包')} · ${money(sum(loaded.data, 'weight'))} kg`}>
@@ -157,6 +158,7 @@ export function ShipmentSummary() {
   const [other, setOther] = useState({ detail: '', amount: '' });
   const [print, setPrint] = useState(false);
   const { run } = useAction();
+  const { ask } = useAsk();
   const reloadAll = () => { list.reload(); detail.reload(); };
   const d = detail.data;
   const posted = !!d?.summary;
@@ -173,6 +175,7 @@ export function ShipmentSummary() {
           </Field>
         </Grid>
       </Card>
+      {!sid && <Card><Empty>{t('Choose a shipment round above to see its customers and charges', 'เลือกรอบขนส่งด้านบน เพื่อดูลูกค้าและค่าขนส่งในรอบนั้น', '请先选择发货单')}</Empty></Card>}
       {sid && (
         <div className="split">
           <Card title={t('Customers on this round', 'ลูกค้าในรอบนี้', '本发货单客户')}>
@@ -185,12 +188,13 @@ export function ShipmentSummary() {
                 : r.summary.paid ? <Badge tone="good">{t('Paid', 'ชำระยอดแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Posted', 'สรุปยอดแล้ว', '已汇总')}</Badge> },
             ]} />
           </Card>
+          {!cid && <Card><Empty>{t('Click a customer on the left to see their boxes and post the bill', 'คลิกลูกค้าทางซ้าย เพื่อดูรายการกล่องและสรุปยอด', '点击左边客户查看明细')}</Empty></Card>}
           {d && (
             <Card title={<>{d.customer.code} · {d.currency} {posted && <Badge tone="warn">{t('Posted', 'สรุปยอดแล้ว', '已汇总')}</Badge>}</>}
               actions={<>
-                <button onClick={() => setPrint(true)}>🖨 {t('Print', 'ปริ้น', '打印')}</button>
+                <button onClick={() => setPrint(true)}><Printer size={16} aria-hidden /> {t('Print', 'ปริ้น', '打印')}</button>
                 {!posted && <button className="primary" onClick={async () => { if (await run(() => api(`/shipments/${sid}/summary/${cid}`, { body: { currency } }))) reloadAll(); }}>{t('Post to balance', 'สรุปยอด', '汇总')}</button>}
-                {posted && !d.summary.paid && <button onClick={async () => { if (confirm('Undo?') && await run(() => api(`/shipments/${sid}/summary/${cid}`, { method: 'DELETE' }))) reloadAll(); }}>{t('Undo post', 'ยกเลิกสรุปยอด', '取消汇总')}</button>}
+                {posted && !d.summary.paid && <button onClick={async () => { if (await ask(t('Undo the posted summary for this customer?', 'ยกเลิกการสรุปยอดของลูกค้ารายนี้?', '取消此客户的汇总?'), { ok: t('Undo post', 'ยกเลิกสรุปยอด', '取消汇总') }) && await run(() => api(`/shipments/${sid}/summary/${cid}`, { method: 'DELETE' }))) reloadAll(); }}>{t('Undo post', 'ยกเลิกสรุปยอด', '取消汇总')}</button>}
                 {posted && <button onClick={async () => { if (await run(() => api(`/shipments/${sid}/summary/${cid}/paid`, { body: { paid: !d.summary.paid } }))) reloadAll(); }}>{d.summary.paid ? t('Mark unpaid', 'ยังไม่จ่าย', '未付') : t('Mark paid', 'จ่ายแล้ว', '已付')}</button>}
               </>}>
               <p className="muted">{t('Rule', 'คิดตาม', '计算')}: {d.rates.calc_type} · kg {money(d.currency === 'CNY' ? d.rates.kilo_yuan : d.rates.kilo)} · m³ {money(d.currency === 'CNY' ? d.rates.cubic_yuan : d.rates.cubic)}</p>
@@ -198,20 +202,20 @@ export function ShipmentSummary() {
                 { key: 'packing_code', label: t('Box', 'เลขกระสอบ', '包号') },
                 { key: 'weight', label: 'kg', align: 'right' },
                 { key: 'cbm', label: 'm³', render: (r) => r.cbm.toFixed(4), align: 'right' },
-                { key: 'basis', label: t('Basis', 'คิดตาม', '计算'), render: (r) => <>{r.basis}{r.rate_type ? ' ✎' : ''}</> },
+                { key: 'basis', label: t('Basis', 'คิดตาม', '计算'), render: (r) => <>{r.basis}{r.rate_type ? <Pencil size={12} aria-label="custom rate" style={{ marginLeft: 4 }} /> : ''}</> },
                 { key: 'rate', label: t('Rate', 'เรท', '单价'), money: true },
                 { key: 'price', label: t('Price', 'ราคา', '价格'), money: true, sum: true },
               ]} />
               <h3>{t('Other charges', 'ค่าใช้จ่ายอื่นๆ', '其他费用')}</h3>
               <Table rows={d.others} columns={[
                 { key: 'detail', label: t('Detail', 'รายละเอียด', '详情') }, { key: 'amount', label: t('Amount', 'ยอด', '总额'), money: true, sum: true },
-                { key: 'x', label: '', render: (r) => !posted && <button className="link danger" onClick={async () => { if (await run(() => api(`/r/shipment_other_amounts/${r.id}`, { method: 'DELETE' }))) reloadAll(); }}>×</button> },
+                { key: 'x', label: '', render: (r) => !posted && <button className="link danger" onClick={async () => { if (await run(() => api(`/r/shipment_other_amounts/${r.id}`, { method: 'DELETE' }))) reloadAll(); }}><X size={16} aria-hidden /><span className="sr-only">Remove</span></button> },
               ]} />
               {!posted && (
                 <div className="row" style={{ marginTop: 8 }}>
                   <input style={{ flex: 2 }} placeholder={t('Detail (e.g. delivery fee)', 'รายละเอียด เช่น ค่าส่งในไทย', '详情')} value={other.detail} onChange={(e) => setOther({ ...other, detail: e.target.value })} />
                   <input style={{ flex: 1 }} type="number" placeholder={t('Amount', 'ยอด', '总额')} value={other.amount} onChange={(e) => setOther({ ...other, amount: e.target.value })} />
-                  <button onClick={async () => { if (await run(() => api('/r/shipment_other_amounts', { body: { ...other, shipment_id: sid, customer_id: cid } }))) { setOther({ detail: '', amount: '' }); reloadAll(); } }}>+ {t('Add', 'เพิ่ม', '加')}</button>
+                  <button onClick={async () => { if (await run(() => api('/r/shipment_other_amounts', { body: { ...other, shipment_id: sid, customer_id: cid } }))) { setOther({ detail: '', amount: '' }); reloadAll(); } }}><Plus size={16} aria-hidden /> {t('Add', 'เพิ่ม', '加')}</button>
                 </div>
               )}
               <div className="total-line"><span>{t('Shipping', 'ค่าขนส่ง', '运费')} {money(d.shipping)}</span><span>{t('Other', 'อื่นๆ', '其他')} {money(d.other)}</span><span>{t('Total', 'รวม', '总价')} {money(d.total)} {d.currency}</span></div>
@@ -288,7 +292,7 @@ export function ShipmentReport() {
   const { data } = useApi<any>(`/shipments/${id}/report`);
   if (!data) return null;
   return (
-    <Page title={`${t('Packing list', 'รายงาน Packing list', '装箱单')} · ${data.shipment.code}`} actions={<button onClick={() => window.print()}>🖨 {t('Print', 'ปริ้น', '打印')}</button>}>
+    <Page back="/shipments" title={`${t('Packing list', 'รายงาน Packing list', '装箱单')} · ${data.shipment.code}`} actions={<button onClick={() => window.print()}><Printer size={16} aria-hidden /> {t('Print', 'ปริ้น', '打印')}</button>}>
       <div className="card print-area doc">
         <h2>Packing list {data.shipment.code} · {data.shipment.date}</h2>
         <table>

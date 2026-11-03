@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, useApi, useApp, useCan, useT, money, today, monthStart } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, BankPick, ShipmentPick, DateRange, Badge, Modal, useAction } from '../ui';
+import { Page, Card, Grid, Field, Table, CustomerPick, BankPick, ShipmentPick, DateRange, Badge, Modal, useAction, useAsk } from '../ui';
+import { Check, Plus, RefreshCw } from 'lucide-react';
 
 export function usePaymentLabels() {
   const t = useT();
@@ -66,9 +67,10 @@ export function Payments() {
   const { data, reload } = useApi<any[]>('/payments', q);
   const [edit, setEdit] = useState<any>(null);
   const { run } = useAction();
+  const { ask } = useAsk();
   return (
     <Page title={t('Payment notices', 'รายการแจ้งโอน', '付款通知')}
-      actions={<button className="primary" onClick={() => setEdit({ type: 'topup', pay_from: 'bank', payment_date: today(), exchange_rate: lookups.rate || '' })}>+ {t('New notice', 'เพิ่มรายการแจ้งโอน', '新增')}</button>}>
+      actions={<button className="primary" onClick={() => setEdit({ type: 'topup', pay_from: 'bank', payment_date: today(), exchange_rate: lookups.rate || '' })}><Plus size={16} aria-hidden /> {t('New notice', 'เพิ่มรายการแจ้งโอน', '新增')}</button>}>
       <Card>
         <Grid cols={4}>
           <Field label={t('Customer', 'ลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => setQ({ ...q, customer_id: v })} /></Field>
@@ -91,7 +93,7 @@ export function Payments() {
         { key: 'exchange_rate', label: t('Rate', 'เรท', '汇率') },
         { key: 'status_id', label: t('Status', 'สถานะ', '状态'), render: (r) => L.status(r.status_id) },
         { key: 'checked_by', label: t('Checked by', 'ตรวจโดย', '校验人') },
-        { key: 'x', label: '', render: (r) => r.status_id !== 2 && <button className="link danger" onClick={async (e) => { e.stopPropagation(); if (confirm('?') && await run(() => api(`/payments/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button> },
+        { key: 'x', label: '', render: (r) => r.status_id !== 2 && <button className="link danger" onClick={async (e) => { e.stopPropagation(); if (await ask(t('Delete this item?', 'ต้องการลบรายการนี้?', '你确定要删除吗?'), { danger: true }) && await run(() => api(`/payments/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button> },
       ]} />
       {edit && <PaymentForm value={edit} onClose={() => setEdit(null)} onSaved={reload} />}
     </Page>
@@ -109,22 +111,23 @@ export function CheckPayments() {
   const [ap, setAp] = useState<any>(null);
   const [add, setAdd] = useState<any>(null);
   const { run, busy } = useAction();
+  const { ask, askText } = useAsk();
   const refresh = () => { reload(); unmatched.reload(); };
   const approve = async () => {
     if (await run(() => api(`/payments/${ap.id}/approve`, { body: ap }), t('Approved', 'ตรวจเรียบร้อย', '通过'))) { setAp(null); refresh(); }
   };
   const quickAll = async () => {
     const ready = (data || []).filter((p) => p.pay_from === 'bank' && p.candidates.length === 1 && p.type !== 'topup_cny' && p.type !== 'goods');
-    if (!ready.length || !confirm(`${t('Approve', 'อนุมัติ', '通过')} ${ready.length}?`)) return;
+    if (!ready.length || !(await ask(`${t('Approve', 'อนุมัติ', '通过')} ${ready.length} ${t('notices?', 'รายการ?', '条?')}`, { ok: t('Approve', 'อนุมัติ', '通过') }))) return;
     for (const p of ready) await run(() => api(`/payments/${p.id}/approve`, { body: { statement_id: p.candidates[0].id } }), false);
     refresh();
   };
   return (
     <Page title={t('Check customer payments', 'ตรวจสอบยอดโอนเงินลูกค้า', '核对付款')}
       actions={<>
-        <button onClick={refresh}>↻</button>
+        <button onClick={refresh}><RefreshCw size={16} aria-hidden /><span className="sr-only">Refresh</span></button>
         {can.verify('payment') && <button onClick={quickAll}>{t('Approve all exact matches', 'ตรวจยอดทั้งหมด (ตรงกันพอดี)', '全部核对')}</button>}
-        <button className="primary" onClick={() => setAdd({ type: 'topup', pay_from: 'bank', payment_date: today(), exchange_rate: lookups.rate || '' })}>+ {t('Add notice', 'เพิ่มรายการแจ้งโอน', '新增')}</button>
+        <button className="primary" onClick={() => setAdd({ type: 'topup', pay_from: 'bank', payment_date: today(), exchange_rate: lookups.rate || '' })}><Plus size={16} aria-hidden /> {t('Add notice', 'เพิ่มรายการแจ้งโอน', '新增')}</button>
       </>}>
       {!can.verify('payment') && <p className="muted">{t('You can view but not approve. Ask an admin for the "Customer payments" check permission.', 'คุณไม่มีสิทธิ์ตรวจสอบรายการ', '您无权验证')}</p>}
       <Card title={`${t('Waiting', 'รอตรวจสอบ', '待核对')} (${data?.length ?? 0})`}>
@@ -137,11 +140,11 @@ export function CheckPayments() {
           { key: 'amount_check', label: t('Amount', 'ยอด', '金额'), money: true, sum: true },
           { key: 'balance_thb', label: t('THB bal.', 'เงินไทย', '泰铢'), money: true },
           { key: 'm', label: t('Bank match', 'ยอดธนาคาร', '银行'), render: (r) => r.pay_from !== 'bank' ? '—' : r.candidates.length
-            ? <Badge tone={r.candidates.length === 1 ? 'good' : 'warn'}>{r.candidates.length === 1 ? `✓ ${r.candidates[0].date}` : `${r.candidates.length} ${t('possible', 'รายการ', '可能')}`}</Badge>
+            ? <Badge tone={r.candidates.length === 1 ? 'good' : 'warn'}>{r.candidates.length === 1 ? <><Check size={12} aria-hidden /> {r.candidates[0].date}</> : `${r.candidates.length} ${t('possible', 'รายการ', '可能')}`}</Badge>
             : <Badge tone="bad">{t('Not found', 'หาไม่เจอ', '找不到')}</Badge> },
           { key: 'a', label: '', render: (r) => can.verify('payment') && <span className="row">
             <button className="small primary" onClick={() => setAp({ ...r, statement_id: r.candidates[0]?.id || null, amount_paid: r.amount_check, exchange_rate: r.exchange_rate || lookups.rate || '', exchange_fee: r.exchange_fee || 0 })}>{t('Check', 'ตรวจ', '核对')}</button>
-            <button className="small danger" onClick={async () => { const remark = prompt(t('Reason', 'เหตุผล', '原因')) ?? undefined; if (remark !== undefined && await run(() => api(`/payments/${r.id}/reject`, { body: { remark } }))) refresh(); }}>{t('Reject', 'ไม่ผ่าน', '不通过')}</button>
+            <button className="small danger" onClick={async () => { const remark = await askText(t('Reject this payment notice?', 'ไม่ผ่านรายการแจ้งโอนนี้?', '不通过此付款通知?'), t('Reason (shown in history)', 'เหตุผล', '原因')); if (remark !== undefined && await run(() => api(`/payments/${r.id}/reject`, { body: { remark } }))) refresh(); }}>{t('Reject', 'ไม่ผ่าน', '不通过')}</button>
           </span> },
         ]} empty={t('Nothing waiting', 'ไม่มีรายการรอตรวจ', '没有待核对')} />
       </Card>
@@ -154,7 +157,7 @@ export function CheckPayments() {
       </Card>
       {ap && (
         <Modal open wide title={`${t('Check', 'ตรวจสอบ', '核对')} #${ap.id} · ${ap.customer_code} · ${L.type(ap.type)}`} onClose={() => setAp(null)}
-          footer={<><button onClick={() => setAp(null)}>{t('Cancel', 'ยกเลิก', '取消')}</button><button className="primary" disabled={busy} onClick={approve}>✓ {t('Approve', 'ผ่าน', '通过')}</button></>}>
+          footer={<><button onClick={() => setAp(null)}>{t('Cancel', 'ยกเลิก', '取消')}</button><button className="primary" disabled={busy} onClick={approve}><Check size={16} aria-hidden /> {t('Approve', 'ผ่าน', '通过')}</button></>}>
           <Grid cols={4}>
             <Field label={t('Amount received (THB)', 'ยอดเงินจริง', '实收')}><input type="number" step="any" value={ap.amount_paid} onChange={(e) => setAp({ ...ap, amount_paid: e.target.value })} /></Field>
             <Field label={t('Date', 'วันที่', '日期')}><input type="date" value={ap.payment_date || today()} onChange={(e) => setAp({ ...ap, payment_date: e.target.value })} /></Field>

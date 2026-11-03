@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, monthStart } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, PrintModal, Combo, useAction } from '../ui';
+import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, PrintModal, Combo, useAction, useAsk } from '../ui';
+import { Printer, Plus, X } from 'lucide-react';
 
 function SupplierBankPick({ value, onChange }: { value: any; onChange: (v: any) => void }) {
   const t = useT();
@@ -65,7 +66,7 @@ export function PackageEdit() {
     if (r) nav(`/packages/${id || r.id}`);
   };
   return (
-    <Page title={id ? `${t('Bill', 'บิล', '划款单')} ${h.code}` : t('New supplier bill / receive goods', 'เปิดบิลโอนใหม่ / รับของ', '开划款单 / 收货')}
+    <Page back={id ? `/packages/${id}` : undefined} title={id ? `${t('Bill', 'บิล', '划款单')} ${h.code}` : t('New supplier bill / receive goods', 'เปิดบิลโอนใหม่ / รับของ', '开划款单 / 收货')}
       actions={<button className="primary" disabled={busy || !lines.length} onClick={save}>{t('Save bill', 'บันทึก', '保存')}</button>}>
       <Card>
         <Grid cols={4}>
@@ -81,7 +82,7 @@ export function PackageEdit() {
       {h.customer_id && (
         <Card title={t('Order lines waiting to be received', 'รายการที่ยังไม่ได้รับของ', '等待收货')}
           actions={<><input style={{ width: 160 }} placeholder={t('Order no.', 'เลขออเดอร์', '单号')} value={orderFilter} onChange={(e) => setOrderFilter(e.target.value)} />
-            <Link to={`/orders/new?customer_id=${h.customer_id}`}><button>+ {t('New order', 'เพิ่มออเดอร์', '新订单')}</button></Link></>}>
+            <Link to={`/orders/new?customer_id=${h.customer_id}`}><button><Plus size={16} aria-hidden /> {t('New order', 'เพิ่มออเดอร์', '新订单')}</button></Link></>}>
           <Table rows={(waiting.data || []).filter((r) => !chosenIds.has(r.id))} onRow={add} maxHeight={300} columns={[
             { key: 'order_id', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (r) => <b>{r.order_no || `#${r.order_id}`}</b> },
             { key: 'order_date', label: t('Date', 'วันที่', '日期') },
@@ -91,7 +92,7 @@ export function PackageEdit() {
             { key: 'quantity', label: t('Ordered', 'สั่ง', '订'), align: 'right' },
             { key: 'received_qty', label: t('Received', 'รับแล้ว', '收到'), align: 'right' },
             { key: 'unit_price', label: t('Price ¥', 'ราคา', '单价'), money: true },
-            { key: 'add', label: '', render: () => <button className="link">+ {t('Add', 'เพิ่ม', '加')}</button> },
+            { key: 'add', label: '', render: () => <button className="link"><Plus size={16} aria-hidden /> {t('Add', 'เพิ่ม', '加')}</button> },
           ]} empty={t('Nothing left to receive for this customer', 'ไม่มีรายการรอรับของ', '没有等待收货')} />
         </Card>
       )}
@@ -144,15 +145,16 @@ export function PackageView() {
   const [print, setPrint] = useState(false);
   const [ded, setDed] = useState<any>(null);
   const { run } = useAction();
+  const { ask } = useAsk();
   if (!k) return null;
   const del = async () => {
-    if (!confirm(t('Delete this bill?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'))) return;
+    if (!(await ask(t('Delete this bill?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'), { danger: true }))) return;
     if (await run(() => api(`/packages/${k.id}`, { method: 'DELETE' }), t('Deleted', 'ลบแล้ว', '已删除'))) nav('/packages');
   };
   return (
-    <Page title={<>{t('Bill', 'บิล', '划款单')} {k.code} {k.is_done_paid ? <Badge tone="good">{t('Paid', 'จ่ายแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</Badge>}</>}
+    <Page back="/packages" title={<>{t('Bill', 'บิล', '划款单')} {k.code} {k.is_done_paid ? <Badge tone="good">{t('Paid', 'จ่ายแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</Badge>}</>}
       actions={<>
-        <button onClick={() => setPrint(true)}>🖨 {t('Print', 'ปริ้น', '打印')}</button>
+        <button onClick={() => setPrint(true)}><Printer size={16} aria-hidden /> {t('Print', 'ปริ้น', '打印')}</button>
         {!k.payments.length && <button onClick={() => nav(`/packages/${k.id}/edit`)}>{t('Edit', 'แก้ไข', '修改')}</button>}
         {!k.payments.length && <button className="danger" onClick={del}>{t('Delete', 'ลบ', '删除')}</button>}
         {can.menu('invoice.payment') && !k.is_done_paid && <button className="primary" onClick={() => nav(`/invoice-payments/new?bill=${k.code}`)}>{t('Pay this bill', 'จ่ายบิลนี้', '付款')}</button>}
@@ -182,7 +184,7 @@ export function PackageView() {
           <Table rows={k.statements} columns={[
             { key: 'product_id', label: t('Product', 'สินค้า', '产品') }, { key: 'type', label: t('Type', 'ประเภท', '类别') },
             { key: 'amount', label: '¥', money: true, sum: true }, { key: 'description', label: t('Note', 'หมายเหตุ', '备注') },
-            { key: 'x', label: '', render: (r) => <button className="link danger" onClick={async () => { if (await run(() => api(`/package-statements/${r.id}`, { method: 'DELETE' }))) reload(); }}>×</button> },
+            { key: 'x', label: '', render: (r) => <button className="link danger" onClick={async () => { if (await run(() => api(`/package-statements/${r.id}`, { method: 'DELETE' }))) reload(); }}><X size={16} aria-hidden /><span className="sr-only">Remove</span></button> },
           ]} />
         </Card>
         <Card title={t('Payments', 'การจ่ายเงิน', '付款')}>
@@ -220,7 +222,7 @@ export function PackageSearch() {
   const [q, setQ] = useState<any>({ from: monthStart(), to: '', paid: '' });
   const { data } = useApi<any[]>('/packages', q);
   return (
-    <Page title={t('Search supplier bills', 'ค้นหาบิลโอนเงิน', '找划款单')} actions={<Link to="/packages/new"><button className="primary">+ {t('New bill', 'เปิดบิลโอนใหม่', '开划款单')}</button></Link>}>
+    <Page title={t('Search supplier bills', 'ค้นหาบิลโอนเงิน', '找划款单')} actions={<Link to="/packages/new"><button className="primary"><Plus size={16} aria-hidden /> {t('New bill', 'เปิดบิลโอนใหม่', '开划款单')}</button></Link>}>
       <Card>
         <Grid cols={6}>
           <Field label={t('Customer', 'ลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => setQ({ ...q, customer_id: v })} /></Field>

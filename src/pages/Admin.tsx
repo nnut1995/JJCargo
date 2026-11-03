@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { MENU, VERIFY_KEYS } from '../../shared/menus';
 import { api, useApi, useApp, useLang, useT, pick, today } from '../lib';
 import { Page, Card, Grid, Field, Table, Badge, Modal, Tabs, useAction } from '../ui';
+import { Plus } from 'lucide-react';
 import { CrudPage } from './Crud';
 
 /** EmployeeForm + AddEmployeeFrom + EmployeeRoleAddFrom */
@@ -21,7 +22,7 @@ export function Employees() {
         <Tabs value={tab} onChange={setTab} tabs={[{ key: 'emp', label: t('Employees', 'พนักงาน', '员工') }, { key: 'roles', label: t('Roles', 'ตำแหน่ง', '职位') }, { key: 'audit', label: t('Activity log', 'ประวัติการใช้งาน', '日志') }]} />
       </div>
       {tab === 'emp' && (
-        <Page title={t('Employees', 'ข้อมูลพนักงาน', '员工信息')} actions={<button className="primary" onClick={() => setEdit({ is_active: 1, start_date: today() })}>+ {t('Add', 'เพิ่ม', '新增')}</button>}>
+        <Page title={t('Employees', 'ข้อมูลพนักงาน', '员工信息')} actions={<button className="primary" onClick={() => setEdit({ is_active: 1, start_date: today() })}><Plus size={16} aria-hidden /> {t('Add', 'เพิ่ม', '新增')}</button>}>
           <Table rows={data} onRow={(r) => setEdit({ ...r, password: '' })} columns={[
             { key: 'name', label: t('Name', 'ชื่อ', '名字') }, { key: 'username', label: t('Username', 'ชื่อผู้ใช้', '用户名') },
             { key: 'role', label: t('Role', 'ตำแหน่ง', '职位') }, { key: 'phone', label: t('Phone', 'เบอร์โทร', '电话') },
