@@ -294,7 +294,7 @@ td .row { flex-wrap: nowrap; gap: 2px; }
 .combo-clear { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); border: none; background: none; box-shadow: none; min-height: 0; padding: 4px; color: var(--muted); }
 .combo-clear:hover:not(:disabled) { background: var(--hover); color: var(--text); }
 .combo-clear:active:not(:disabled) { transform: translateY(-50%); }
-.combo-list { position: absolute; z-index: 40; left: 0; right: 0; min-width: 220px; top: 100%; margin: 4px 0 0; padding: 4px; list-style: none; background: var(--panel);
+.combo-list { position: fixed; z-index: 60; margin: 0; padding: 4px; list-style: none; background: var(--panel);
   border: 1px solid var(--line); border-radius: var(--radius-sm); max-height: 300px; overflow: auto; box-shadow: var(--shadow-2); }
 .combo-list li { padding: 7px 10px; cursor: pointer; border-radius: 5px; display: flex; justify-content: space-between; gap: 10px; }
 .combo-list li small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

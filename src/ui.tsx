@@ -1,6 +1,7 @@
 import { createContext, isValidElement, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import JsBarcode from 'jsbarcode';
 import { AlertTriangle, Check, CheckCircle2, ChevronLeft, Inbox, Plus, Printer, X, XCircle } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { api, useApp, useT, custName, money, pick, useLang, BI_SEP, BI_END } from './lib';
 
@@ -302,6 +303,24 @@ export function Combo<T>({ items, value, onChange, getLabel, getId = (x: any) =>
   const [open, setOpen] = useState(false);
   const [hi, setHi] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  // The list is drawn on <body> with fixed position, so a table, card or dialog that scrolls can't clip it.
+  const [pos, setPos] = useState<{ left: number; width: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = boxRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const below = window.innerHeight - r.bottom - 8, above = r.top - 8;
+      const up = below < 200 && above > below;
+      setPos({ left: r.left, width: Math.max(r.width, 220), maxHeight: Math.min(300, (up ? above : below) - 4),
+        ...(up ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => { window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
+  }, [open]);
   useEffect(() => { setText(current ? getLabel(current) : ''); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, items.length]);
   const filtered = useMemo(() => {
@@ -317,7 +336,7 @@ export function Combo<T>({ items, value, onChange, getLabel, getId = (x: any) =>
     setOpen(false);
   };
   return (
-    <div className="combo">
+    <div className="combo" ref={boxRef}>
       <input id={id} value={text} placeholder={placeholder} autoFocus={autoFocus} role="combobox" aria-expanded={open} autoComplete="off"
         onFocus={(e) => { setOpen(true); e.target.select(); }}
         onBlur={() => setTimeout(() => { setOpen(false); if (!text && allowEmpty) choose(undefined); else setText(current ? getLabel(current) : ''); }, 150)}
@@ -329,14 +348,14 @@ export function Combo<T>({ items, value, onChange, getLabel, getId = (x: any) =>
           if (e.key === 'Escape' && open) { setOpen(false); e.stopPropagation(); }
         }} />
       {value != null && value !== '' && allowEmpty && <button type="button" tabIndex={-1} className="combo-clear" aria-label="Clear" onMouseDown={(e) => { e.preventDefault(); choose(undefined); }}><X size={14} /></button>}
-      {open && filtered.length > 0 && (
-        <ul className="combo-list" ref={listRef} role="listbox">
+      {open && pos && filtered.length > 0 && createPortal(
+        <ul className="combo-list" ref={listRef} role="listbox" style={pos}>
           {filtered.map((x, i) => (
             <li key={String(getId(x))} role="option" aria-selected={i === hi} className={`${i === hi ? 'hi' : ''}${String(getId(x)) === String(value) ? ' cur' : ''}`} onMouseDown={() => choose(x)} onMouseEnter={() => setHi(i)}>
               <span>{getLabel(x)}</span>{getHint && <small>{getHint(x)}</small>}
             </li>
           ))}
-        </ul>
+        </ul>, document.body,
       )}
     </div>
   );
