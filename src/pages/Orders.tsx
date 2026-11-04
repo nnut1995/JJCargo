@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, monthStart } from '../lib';
 import { Page, Card, Grid, Field, Table, Tabs, CustomerPick, StylePick, DateRange, Badge, Modal, useAction, useAsk } from '../ui';
 import { BillList } from './Packages';
-import { Check, Pencil, Plus, ReceiptText, Search } from 'lucide-react';
+import { Check, Pencil, Plus, Search } from 'lucide-react';
 
 const emptyLine = () => ({ key: Math.random(), product_id: '', style_id: null as any, quantity: 1, unit_price: 0 });
 
@@ -92,7 +92,7 @@ export function OrdersHub() {
         { key: 'bills', label: t('Supplier bills', 'บิลโอนเงิน', '划款单') },
       ]} />}
       {tab === 'orders'
-        ? <OrderList search={search} onSearch={setSearch} onShowBills={(no) => setSp({ tab: 'bills', q: no }, { replace: true })} />
+        ? <OrderList search={search} onSearch={setSearch} />
         : <BillList search={search} onSearch={setSearch} />}
     </Page>
   );
@@ -116,7 +116,7 @@ export function SearchBox({ value, onChange }: { value: string; onChange: (v: st
   );
 }
 
-function OrderList({ search, onSearch, onShowBills }: { search: string; onSearch: (v: string) => void; onShowBills: (orderNo: string) => void }) {
+function OrderList({ search, onSearch }: { search: string; onSearch: (v: string) => void }) {
   const t = useT();
   const [sp] = useSearchParams();
   const nav = useNavigate();
@@ -163,7 +163,6 @@ function OrderList({ search, onSearch, onShowBills }: { search: string; onSearch
       {open && detail.data && (
         <Modal open wide onClose={closeDetail} title={`${t('Order', 'ออเดอร์', '订单')} ${detail.data.order_no || '#' + open} · ${detail.data.customer_code}`}
           footer={<>
-            {(can.menu('package.search') || can.menu('package.new')) && <button onClick={() => onShowBills(detail.data.order_no || String(open))}><ReceiptText size={16} aria-hidden /> {t('Supplier bills of this order', 'ดูบิลโอนของออเดอร์นี้', '查看此订单的划款单')}</button>}
             {can.menu('package.new') && !detail.data.items.some((i: any) => i.quantity > i.received_qty) && <Link to={`/packages/new?customer_id=${detail.data.customer_id}`}><button><Plus size={16} aria-hidden /> {t('New bill for this customer', 'เปิดบิลโอนให้ลูกค้านี้', '为此客户开划款单')}</button></Link>}
             <Link to={`/orders/${open}`}><button><Pencil size={16} aria-hidden /> {t('Edit order', 'แก้ไขออเดอร์', '修改订单')}</button></Link>
             {can.menu('package.new') && detail.data.items.some((i: any) => i.quantity > i.received_qty) && <Link to={`/packages/new?order_id=${open}`}><button className="primary"><Plus size={16} aria-hidden /> {t('New bill from this order', 'เปิดบิลโอนจากออเดอร์นี้', '按此订单开划款单')}</button></Link>}
