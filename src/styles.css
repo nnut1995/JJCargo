@@ -475,3 +475,5 @@ kbd.on-primary { background: rgba(255,255,255,0.18); color: inherit; border-colo
 .doc td, .doc th { color: #000; }
 .doc tfoot td { background: #f3f3f3; position: static; }
 .doc tbody tr:hover td { background: transparent; }
+.order-bills { margin-top: 18px; }
+.order-bills h3 { margin: 0 0 8px; }

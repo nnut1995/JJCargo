@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, monthStart } from '../lib';
 import { Page, Card, Grid, Field, Table, Tabs, CustomerPick, StylePick, DateRange, Badge, Modal, Bi, useAction, useAsk } from '../ui';
 import { BillList } from './Packages';
-import { Check, Pencil, Plus, Search } from 'lucide-react';
+import { Check, ChevronRight, Pencil, Plus, Search } from 'lucide-react';
 
 const emptyLine = () => ({ key: Math.random(), product_id: '', style_id: null as any, quantity: 1, unit_price: 0 });
 
@@ -116,6 +116,25 @@ export function SearchBox({ value, onChange }: { value: string; onChange: (v: st
   );
 }
 
+/** Supplier bills that contain this order's lines; each row opens the bill. */
+function OrderBills({ bills, canOpen }: { bills: any[]; canOpen: boolean }) {
+  const t = useT();
+  const nav = useNavigate();
+  return (
+    <div className="order-bills">
+      <h3><Bi>{t('Supplier bills of this order', 'บิลโอนของออเดอร์นี้', '此订单的划款单')}</Bi> <span className="muted">({bills.length})</span></h3>
+      <Table rows={bills} onRow={canOpen ? (r) => nav(`/packages/${r.id}`) : undefined} empty={t('No supplier bill yet', 'ยังไม่มีบิลโอน', '还没有划款单')} columns={[
+        { key: 'code', label: t('Bill', 'เลขบิล', '划款单'), render: (r) => <b>{r.code}</b> },
+        { key: 'date', label: t('Date', 'วันที่', '日期') },
+        { key: 'qty', label: t('Qty from this order', 'จำนวนจากออเดอร์นี้', '本订单数量'), align: 'right' },
+        { key: 'amount', label: t('Amount ¥', 'ยอด ¥', '金额 ¥'), money: true },
+        { key: 'paid', label: t('Status', 'สถานะ', '状态'), render: (r) => r.is_done_paid ? <Badge tone="good">{t('Paid', 'จ่ายแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</Badge> },
+        ...(canOpen ? [{ key: 'go', label: '', render: () => <ChevronRight size={16} aria-hidden className="muted" /> }] : []),
+      ]} />
+    </div>
+  );
+}
+
 /** Order header shown in the order dialog: customer (large), shop, dates, payment and money. */
 function OrderInfo({ o }: { o: any }) {
   const t = useT();
@@ -208,6 +227,7 @@ function OrderList({ search, onSearch }: { search: string; onSearch: (v: string)
             { key: 'packed_qty', label: t('Packed', 'แพคแล้ว', '打包了'), align: 'right' },
             { key: 'left', label: t('Not received yet', 'ยังไม่ได้รับ', '未收'), align: 'right', render: (r) => { const left = r.quantity - Math.max(r.received_qty, r.packed_qty); return left > 0 ? <b className="neg">{left}</b> : <Badge tone="good"><Check size={12} aria-label="done" /></Badge>; } },
           ]} />
+          <OrderBills bills={detail.data.bills || []} canOpen={can.menu('package.search') || can.menu('package.new')} />
         </Modal>
       )}
     </>

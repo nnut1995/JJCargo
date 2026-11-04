@@ -140,6 +140,11 @@ export function salesRouter() {
     const o = get<any>('SELECT o.*, c.code AS customer_code, c.firstname, c.lastname, c.nickname, c.phone AS customer_phone FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?', [req.params.id]);
     if (!o) throw new HttpError(404, 'ไม่พบออเดอร์ / Order not found');
     o.items = orderItemProgress('oi.order_id = ?', [o.id]);
+    // Supplier bills that include lines of this order, with this order's part and the bill's paid state.
+    o.bills = all<any>(`SELECT k.id, k.code, k.date, k.is_done_paid, COUNT(pi.id) AS lines,
+        SUM(pi.quantity) AS qty, SUM(pi.quantity * pi.unit_price) AS amount
+      FROM packages k JOIN package_items pi ON pi.package_id = k.id JOIN order_items oi ON oi.id = pi.order_item_id
+      WHERE oi.order_id = ? GROUP BY k.id ORDER BY k.date, k.id`, [o.id]);
     // Shop bank used last time for this shop, so a new bill from this order can start with it.
     o.last_supplier_bank_id = o.supplier_name ? get<any>(`SELECT k.supplier_bank_id AS id FROM packages k
       JOIN package_items pi ON pi.package_id = k.id JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders x ON x.id = oi.order_id
