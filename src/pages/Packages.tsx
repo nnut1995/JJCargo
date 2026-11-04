@@ -165,16 +165,34 @@ export function BillDoc({ k }: { k: any }) {
   );
 }
 
-/** Barcode label for a supplier bill: bill code as a barcode, customer, date and order numbers. */
+/** Barcode label for a supplier bill: customer name large, bill code as a barcode, and what was received per order. */
 export function BillLabel({ k }: { k: any }) {
   const t = useT();
-  const orders = [...new Set(k.items.map((i: any) => i.order_no || `#${i.order_id}`))].join(', ');
+  const { lang } = useLang();
+  const name = [k.firstname, k.lastname].filter(Boolean).join(' ') + (k.nickname ? ` (${k.nickname})` : '');
+  const orders: { key: string; no: string; shop?: string; date?: string; items: any[] }[] = [];
+  for (const i of k.items) {
+    const key = String(i.order_id);
+    let o = orders.find((x) => x.key === key);
+    if (!o) orders.push(o = { key, no: i.order_no || `#${i.order_id}`, shop: i.supplier_name, date: i.order_date, items: [] });
+    o.items.push(i);
+  }
+  const qty = k.items.reduce((s: number, i: any) => s + Number(i.quantity || 0), 0);
   return (
-    <div className="label-card">
+    <div className="label-card bill-label">
       <div className="row" style={{ justifyContent: 'space-between' }}><b>{t('Supplier bill', 'บิลโอนเงิน', '划款单')}</b><span>{k.date}</span></div>
       <div className="code">{k.customer_code}</div>
+      {name.trim() && <div className="cust-name">{name}</div>}
       <Barcode value={k.code} />
-      {orders && <div style={{ fontSize: 12, marginTop: 4 }}>{t('Orders', 'ออเดอร์', '订单')}: {orders}</div>}
+      {orders.map((o) => (
+        <div key={o.key} className="bill-label-order">
+          <div className="bill-label-head"><b>{t('Order', 'ออเดอร์', '订单')} {o.no}</b><span>{[o.shop, o.date].filter(Boolean).join(' · ')}</span></div>
+          <table><tbody>{o.items.map((i: any) => (
+            <tr key={i.id}><td>{i.product_id || '-'}</td><td>{pick({ th: i.style_th, zh: i.style_zh }, lang)}</td><td className="num">{i.quantity}</td></tr>
+          ))}</tbody></table>
+        </div>
+      ))}
+      <div className="bill-label-total">{t('Total qty', 'รวมจำนวน', '总数量')} <b>{qty}</b></div>
     </div>
   );
 }
