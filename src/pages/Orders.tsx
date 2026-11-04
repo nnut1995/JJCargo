@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, monthStart } from '../lib';
-import { Page, Card, Grid, Field, Table, Tabs, CustomerPick, StylePick, DateRange, Badge, useAction, useAsk } from '../ui';
+import { Page, Card, Grid, Field, Table, Tabs, CustomerPick, StylePick, DateRange, Badge, Modal, useAction, useAsk } from '../ui';
 import { BillList } from './Packages';
-import { Check, Plus, ReceiptText, Search } from 'lucide-react';
+import { Check, Pencil, Plus, ReceiptText, Search } from 'lucide-react';
 
 const emptyLine = () => ({ key: Math.random(), product_id: '', style_id: null as any, quantity: 1, unit_price: 0 });
 
@@ -126,6 +126,7 @@ function OrderList({ search, onSearch, onShowBills }: { search: string; onSearch
   const { data, reload } = useApi<any[]>('/orders', { ...q, search, from: search || q.id ? '' : q.from, to: search || q.id ? '' : q.to });
   const [open, setOpen] = useState<number | null>(sp.get('id') ? Number(sp.get('id')) : null);
   const detail = useApi<any>(open ? `/orders/${open}` : null);
+  const closeDetail = useCallback(() => setOpen(null), []);
   const { run } = useAction();
   const { ask } = useAsk();
   const del = async (id: number) => {
@@ -141,7 +142,7 @@ function OrderList({ search, onSearch, onShowBills }: { search: string; onSearch
           <DateRange from={search || q.id ? '' : q.from} to={search || q.id ? '' : q.to} onChange={(from, to) => setQ({ ...q, id: '', from, to })} />
         </Grid>
       </Card>
-      <Table rows={data} onRow={(r) => setOpen(open === r.id ? null : r.id)} rowClass={(r) => (r.id === open ? 'on' : '')} columns={[
+      <Table rows={data} onRow={(r) => setOpen(r.id)} rowClass={(r) => (r.id === open ? 'on' : '')} columns={[
         { key: 'order_no', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (r) => <b>{r.order_no || `#${r.id}`}</b> },
         { key: 'order_date', label: t('Date', 'วันที่', '日期') },
         { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
@@ -160,7 +161,16 @@ function OrderList({ search, onSearch, onShowBills }: { search: string; onSearch
           <button className="link danger" onClick={() => del(r.id)}>{t('Delete', 'ลบ', '删除')}</button></span> },
       ]} />
       {open && detail.data && (
-        <Card title={`${t('Order', 'ออเดอร์', '订单')} ${detail.data.order_no || '#' + open} · ${detail.data.customer_code}`} className="mt">
+        <Modal open wide onClose={closeDetail} title={`${t('Order', 'ออเดอร์', '订单')} ${detail.data.order_no || '#' + open} · ${detail.data.customer_code}`}
+          footer={<>
+            {(can.menu('package.search') || can.menu('package.new')) && <button onClick={() => onShowBills(detail.data.order_no || String(open))}><ReceiptText size={16} aria-hidden /> {t('Supplier bills of this order', 'ดูบิลโอนของออเดอร์นี้', '查看此订单的划款单')}</button>}
+            {can.menu('package.new') && !detail.data.items.some((i: any) => i.quantity > i.received_qty) && <Link to={`/packages/new?customer_id=${detail.data.customer_id}`}><button><Plus size={16} aria-hidden /> {t('New bill for this customer', 'เปิดบิลโอนให้ลูกค้านี้', '为此客户开划款单')}</button></Link>}
+            <Link to={`/orders/${open}`}><button><Pencil size={16} aria-hidden /> {t('Edit order', 'แก้ไขออเดอร์', '修改订单')}</button></Link>
+            {can.menu('package.new') && detail.data.items.some((i: any) => i.quantity > i.received_qty) && <Link to={`/packages/new?order_id=${open}`}><button className="primary"><Plus size={16} aria-hidden /> {t('New bill from this order', 'เปิดบิลโอนจากออเดอร์นี้', '按此订单开划款单')}</button></Link>}
+          </>}>
+          <div className="order-meta muted">
+            {detail.data.order_date} · {detail.data.supplier_name || '-'}{detail.data.supplier_phone ? ` · ${detail.data.supplier_phone}` : ''}
+          </div>
           <Table rows={detail.data.items} columns={[
             { key: 'product_id', label: t('Product id', 'รหัสสินค้า', '款号') },
             { key: 'style', label: t('Category', 'ประเภท', '分类'), render: (r) => pick({ th: r.style_th, zh: r.style_zh, en: r.style_en }, lang) },
@@ -171,12 +181,7 @@ function OrderList({ search, onSearch, onShowBills }: { search: string; onSearch
             { key: 'packed_qty', label: t('Packed', 'แพคแล้ว', '打包了'), align: 'right' },
             { key: 'left', label: t('Not received yet', 'ยังไม่ได้รับ', '未收'), align: 'right', render: (r) => { const left = r.quantity - Math.max(r.received_qty, r.packed_qty); return left > 0 ? <b className="neg">{left}</b> : <Badge tone="good"><Check size={12} aria-label="done" /></Badge>; } },
           ]} />
-          <div className="row" style={{ marginTop: 12 }}>
-            {(can.menu('package.search') || can.menu('package.new')) && <button onClick={() => onShowBills(detail.data.order_no || String(open))}><ReceiptText size={16} aria-hidden /> {t('Supplier bills of this order', 'ดูบิลโอนของออเดอร์นี้', '查看此订单的划款单')}</button>}
-            {can.menu('package.new') && detail.data.items.some((i: any) => i.quantity > i.received_qty) && <Link to={`/packages/new?order_id=${open}`}><button><Plus size={16} aria-hidden /> {t('New bill from this order', 'เปิดบิลโอนจากออเดอร์นี้', '按此订单开划款单')}</button></Link>}
-            {can.menu('package.new') && <Link to={`/packages/new?customer_id=${detail.data.customer_id}`}><button><Plus size={16} aria-hidden /> {t('New bill for this customer', 'เปิดบิลโอนให้ลูกค้านี้', '为此客户开划款单')}</button></Link>}
-          </div>
-        </Card>
+        </Modal>
       )}
     </>
   );
