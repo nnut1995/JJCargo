@@ -363,13 +363,6 @@ fieldset.locked input, fieldset.locked select, fieldset.locked textarea { backgr
 .todo .todo-num { font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 2ch; text-align: right; }
 .todo .todo-num.zero { color: var(--muted); font-weight: 400; font-size: 1rem; }
 .todo .chev { color: var(--muted); }
-.flow { display: flex; gap: 0; overflow-x: auto; margin: 0 -4px; padding: 2px 4px 4px; }
-.flow a { flex: 1 0 128px; display: flex; flex-direction: column; gap: 6px; padding: 12px 12px 12px 14px; color: var(--text); text-decoration: none; position: relative; border-radius: 8px; }
-.flow a:hover { background: var(--hover); }
-.flow a + a::before { content: ''; position: absolute; left: -6px; top: 26px; width: 12px; height: 1px; background: var(--line-strong); }
-.flow .flow-ico { width: 34px; height: 34px; border-radius: 9px; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; }
-.flow .flow-step { font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-.flow .flow-name { font-weight: 500; line-height: 1.3; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--text); text-decoration: none; box-shadow: var(--shadow-1); }
 .chip:hover { border-color: var(--brand-line); background: var(--brand-soft); color: var(--text); }

@@ -8,8 +8,6 @@ import { ITEM_ICON } from '../nav';
 
 const ITEMS = Object.fromEntries(MENU.flatMap((g) => g.items.map((i) => [i.key, i])));
 
-// The daily cargo flow, in the order the work happens.
-const FLOW = ['order.new', 'package.new', 'packing.new', 'packing.offchina', 'shipment.summary', 'payment.check'];
 
 export default function Dashboard() {
   const t = useT();
@@ -17,7 +15,6 @@ export default function Dashboard() {
   const nav = useNavigate();
   const { lang } = useLang();
     const { data: d, reload, loading } = useApi<any>('/dashboard');
-  const label = (k: string) => pick(ITEMS[k], lang);
 
   // Work waiting for someone, each linking to the screen where it gets done.
   const todo: { key: string; menu: string; text: string; sub?: string; n: number; shown?: string; tone?: 'warn' | 'bad' }[] = d ? [
@@ -34,27 +31,10 @@ export default function Dashboard() {
   ].filter((x) => can.menu(x.menu)) : [];
   const open = todo.filter((x) => x.n > 0);
   const done = todo.filter((x) => !x.n);
-  const flow = FLOW.filter((k) => can.menu(k));
   
   return (
     <Page title={t('Dashboard', 'แดชบอร์ด', '仪表板')}
       actions={<button onClick={reload} disabled={loading}><RefreshCw size={16} aria-hidden className={loading ? 'spin' : ''} /> {t('Refresh', 'รีเฟรช', '刷新')}</button>}>
-      {flow.length > 1 && (
-        <Card title={t('Daily work, step by step', 'ขั้นตอนงานประจำวัน', '日常流程')}>
-          <nav className="flow" aria-label={t('Daily work', 'ขั้นตอนงาน', '日常流程')}>
-            {flow.map((k, i) => {
-              const Ico: LucideIcon = ITEM_ICON[k];
-              return (
-                <Link key={k} to={ITEMS[k].path}>
-                  <span className="flow-ico"><Ico size={18} aria-hidden /></span>
-                  <span className="flow-step">{t('Step', 'ขั้นที่', '步骤')} {i + 1}</span>
-                  <span className="flow-name"><Bi stack>{label(k)}</Bi></span>
-                </Link>
-              );
-            })}
-          </nav>
-        </Card>
-      )}
 
       <div className="dash">
         <div>
