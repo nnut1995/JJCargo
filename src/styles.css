@@ -92,10 +92,17 @@ button.small { min-height: 28px; padding: 3px 8px; font-size: 0.9em; }
 /* cards / grid */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
 .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
-.grid { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); gap: 12px; align-items: end; }
+.grid { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); gap: 4px 12px; align-items: end; }
+/* Each field spans 3 shared rows (label / control / hint), so inputs in a row line up
+   even when one label wraps or one field has a hint under it. */
+.grid > * { grid-row: span 3; margin-bottom: 8px; }
+.grid > .field { display: grid; grid-template-rows: subgrid; align-content: start; }
+.grid > .field > .label { align-self: end; }
+@supports not (grid-template-rows: subgrid) { .grid { align-items: start; } }
 @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.grid > .field { gap: 4px; }
 .field.wide { grid-column: 1 / -1; }
 .field .label { font-size: 0.82rem; color: var(--muted); }
 .field .hint { font-size: 0.78rem; color: var(--muted); }
