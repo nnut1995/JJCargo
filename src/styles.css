@@ -190,12 +190,9 @@ td input, td select { min-height: 30px; padding: 4px 6px; }
 /* 2026-11 demo feedback */
 @media print { .print-area .no-print { display: none !important; } }
 .clip { display: inline-block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
-.quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-bottom: 16px; }
-.quick a { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-  box-shadow: var(--shadow); color: var(--text); text-decoration: none; min-height: 64px; }
-.quick a:hover { border-color: var(--brand); background: var(--hover); }
-.quick a small { color: var(--muted); font-size: 0.8em; }
-.quick-group { font-size: 0.8rem; color: var(--muted); margin: 4px 0 6px; text-transform: uppercase; letter-spacing: 0.04em; }
 fieldset.locked { border: 0; padding: 0; margin: 0; min-width: 0; }
 fieldset.locked input, fieldset.locked select, fieldset.locked textarea { background: var(--bg); }
 .label-card .meta { flex-wrap: wrap; gap: 6px; }
+a.stat-link { color: inherit; text-decoration: none; display: block; }
+a.stat-link .stat { cursor: pointer; transition: border-color .15s; }
+a.stat-link:hover .stat { border-color: var(--brand); }
