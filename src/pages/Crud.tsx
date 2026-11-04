@@ -1,7 +1,8 @@
 // Generic list + add/edit/delete (+ check) page for simple tables served by /api/r/:resource.
 import { useState, type ReactNode } from 'react';
 import { api, useApi, useApp, useCan, useT, today } from '../lib';
-import { Page, Card, Grid, Field, Table, Modal, Badge, BankPick, CustomerPick, ShipmentPick, DateRange, CheckedFilter, useAction, useToast, type Col } from '../ui';
+import { Page, Card, Grid, Field, Table, Modal, Badge, BankPick, CustomerPick, ShipmentPick, DateRange, CheckedFilter, useAction, useToast, type Col, useAsk } from '../ui';
+import { Check, Plus } from 'lucide-react';
 
 export interface FieldDef {
   key: string;
@@ -75,6 +76,7 @@ export function CrudPage({ resource, title, columns, fields, fixed = {}, dateFil
   const [edit, setEdit] = useState<any>(null);
   const [sel, setSel] = useState<Set<any>>(new Set());
   const { run, busy } = useAction();
+  const { ask } = useAsk();
   const toast = useToast();
   const after = async () => { await reload(); onChanged?.(); if (['banks', 'styles', 'style_units', 'shipments', 'expense_types', 'supplier_banks', 'roles'].includes(resource)) await reloadLookups(); };
   const save = async (v: any) => {
@@ -85,16 +87,16 @@ export function CrudPage({ resource, title, columns, fields, fixed = {}, dateFil
     if (ok) { setEdit(null); await after(); }
   };
   const del = async (row: any) => {
-    if (!confirm(t('Delete this item?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'))) return;
+    if (!(await ask(t('Delete this item?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'), { danger: true }))) return;
     if (await run(() => api(`/r/${resource}/${row.id}`, { method: 'DELETE' }), t('Deleted', 'ลบแล้ว', '已删除'))) await after();
   };
   const check = async () => {
-    if (!sel.size || !confirm(t('Mark selected as checked?', 'แน่ใจหรือเปล่าว่าตรวจยอดแล้ว?', '你确定已经检查 ?'))) return;
+    if (!sel.size || !(await ask(`${t('Mark selected as checked?', 'ยืนยันว่าตรวจยอดแล้ว?', '你确定已经检查 ?')} (${sel.size})`, { ok: t('Mark as checked', 'ตรวจแล้ว', '校验') }))) return;
     if (await run(() => api(`/r/${resource}/check`, { body: { ids: [...sel] } }))) { setSel(new Set()); await after(); }
   };
   const cols: Col[] = [
     ...columns,
-    ...(checkKey ? [{ key: 'checked', label: t('Checked', 'ตรวจสอบ', '校验'), render: (r: any) => r.checked ? <Badge tone="good">✓ {r.checked_by}</Badge> : <Badge tone="warn">{t('Waiting', 'รอตรวจ', '待校验')}</Badge> }] : []),
+    ...(checkKey ? [{ key: 'checked', label: t('Checked', 'ตรวจสอบ', '校验'), render: (r: any) => r.checked ? <Badge tone="good"><Check size={12} aria-hidden /> {r.checked_by}</Badge> : <Badge tone="warn">{t('Waiting', 'รอตรวจ', '待校验')}</Badge> }] : []),
     {
       key: '_act', label: '', render: (r: any) => (
         <span className="row" onClick={(e) => e.stopPropagation()}>
@@ -106,8 +108,8 @@ export function CrudPage({ resource, title, columns, fields, fixed = {}, dateFil
   ];
   const blank = Object.fromEntries(fields.filter((f) => f.default !== undefined).map((f) => [f.key, f.default]));
   return (
-    <Page title={title} actions={<>{actions}{checkKey && can.verify(checkKey) && <button disabled={!sel.size} onClick={check}>✓ {t('Check selected', 'ตรวจแล้ว', '校验')} ({sel.size})</button>}
-      <button className="primary" onClick={() => setEdit({ ...blank })}>+ {t('Add', 'เพิ่ม', '新增')}</button></>}>
+    <Page title={title} actions={<>{actions}{checkKey && can.verify(checkKey) && <button disabled={!sel.size} onClick={check}><Check size={16} aria-hidden /> {t('Check selected', 'ตรวจแล้ว', '校验')} ({sel.size})</button>}
+      <button className="primary" onClick={() => setEdit({ ...blank })}><Plus size={16} aria-hidden /> {t('Add', 'เพิ่ม', '新增')}</button></>}>
       {(dateFilter || search || checkKey || filters) && (
         <Card>
           <Grid cols={5}>

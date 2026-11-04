@@ -211,6 +211,7 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   show_shipment_while_weighing: '1',
   input_ctn_and_no: '0',
   print_text: 'JJ Cargo',
+  print_phone: '',
   status_webhook_url: '',
 };
 

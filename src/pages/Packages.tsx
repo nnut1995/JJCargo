@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, monthStart } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, PrintModal, Combo, useAction } from '../ui';
+import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, PrintModal, Combo, useAction, useAsk, Bi } from '../ui';
+import { Printer, Plus, X } from 'lucide-react';
+import { SearchBox } from './Orders';
 
 function SupplierBankPick({ value, onChange }: { value: any; onChange: (v: any) => void }) {
   const t = useT();
@@ -38,6 +40,10 @@ function SupplierBankPick({ value, onChange }: { value: any; onChange: (v: any) 
 }
 
 /** NewPackageForm / ReceiveForm — receive goods for order lines and open a payment bill to the shop. */
+/** An order line not billed yet, as a line of a new bill (receive what is left, at the order price). */
+const toLine = (r: any) => ({ order_item_id: r.id, order_id: r.order_id, order_no: r.order_no, product_id: r.product_id, style_th: r.style_th, style_zh: r.style_zh,
+  quantity: r.quantity - r.received_qty, unit_price: r.unit_price, deposit: 0, max: r.quantity - r.received_qty });
+
 export function PackageEdit() {
   const t = useT();
   const { id } = useParams();
@@ -47,30 +53,54 @@ export function PackageEdit() {
   const [h, setH] = useState<any>({ customer_id: null, date: today(), supplier_bank_id: null, deposit: 0, code: '' });
   const [lines, setLines] = useState<any[]>([]); // chosen lines
   const [orderFilter, setOrderFilter] = useState('');
+  const [sp] = useSearchParams();
+  const fromOrder = id ? null : sp.get('order_id');
+  const [prefilled, setPrefilled] = useState<any>(null); // the order this new bill was started from
   useEffect(() => {
     if (id) {
       api(`/packages/${id}`).then((k) => { setH(k); setLines(k.items.map((i: any) => ({ ...i, max: i.ordered_qty }))); });
-    } else api('/packages/next-code').then((r) => setH((x: any) => ({ ...x, code: r.code })));
-  }, [id]);
+      return;
+    }
+    api('/packages/next-code').then((r) => setH((x: any) => ({ ...x, code: r.code })));
+    const cid = sp.get('customer_id');
+    if (cid && !fromOrder) setH((x: any) => ({ ...x, customer_id: Number(cid) }));
+    // Opened from an order: customer, shop bank, deposit and every line not billed yet are filled in.
+    if (fromOrder) api<any>(`/orders/${fromOrder}`).then((o) => {
+      const open = o.items.filter((i: any) => i.quantity - i.received_qty > 0);
+      const firstBill = o.items.every((i: any) => !i.received_qty);
+      setH((x: any) => ({ ...x, customer_id: o.customer_id, supplier_bank_id: o.last_supplier_bank_id ?? x.supplier_bank_id, deposit: firstBill ? o.deposit || 0 : 0 }));
+      setLines(open.map(toLine));
+      setOrderFilter(o.order_no || String(o.id));
+      setPrefilled(o);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, fromOrder]);
   const waiting = useApi<any[]>(h.customer_id ? '/packages/waiting' : null, { customer_id: h.customer_id, order_id: orderFilter });
   const chosenIds = new Set(lines.map((l) => l.order_item_id));
-  const add = (r: any) => setLines([...lines, { order_item_id: r.id, order_id: r.order_id, order_no: r.order_no, product_id: r.product_id, style_th: r.style_th, style_zh: r.style_zh,
-    quantity: r.quantity - r.received_qty, unit_price: r.unit_price, deposit: 0, max: r.quantity - r.received_qty }]);
+  const add = (r: any) => setLines([...lines, toLine(r)]);
   const upd = (oid: number, patch: any) => setLines((xs) => xs.map((x) => (x.order_item_id === oid ? { ...x, ...patch } : x)));
   const total = lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
   const deposits = lines.reduce((s, l) => s + Number(l.deposit || 0), 0) + Number(h.deposit || 0);
   const save = async () => {
     const body = { ...h, items: lines.map((l) => ({ id: l.id, order_item_id: l.order_item_id, quantity: l.quantity, unit_price: l.unit_price, deposit: l.deposit, receive_date: h.date })) };
     const r: any = await run(() => (id ? api(`/packages/${id}`, { method: 'PUT', body }) : api('/packages', { body })));
-    if (r) nav(`/packages/${id || r.id}`);
+    // A new bill opens with its print view ready.
+    if (r) nav(id ? `/packages/${id}` : `/packages/${r.id}?printed=new`);
   };
   return (
-    <Page title={id ? `${t('Bill', 'บิล', '划款单')} ${h.code}` : t('New supplier bill / receive goods', 'เปิดบิลโอนใหม่ / รับของ', '开划款单 / 收货')}
+    <Page back={id ? `/packages/${id}` : '/orders?tab=bills'} title={id ? `${t('Bill', 'บิล', '划款单')} ${h.code}` : t('New supplier bill / receive goods', 'เปิดบิลโอนใหม่ / รับของ', '开划款单 / 收货')}
       actions={<button className="primary" disabled={busy || !lines.length} onClick={save}>{t('Save bill', 'บันทึก', '保存')}</button>}>
+      {prefilled && (
+        <div className="note info"><Bi>
+          {t(`Filled in from order ${prefilled.order_no || '#' + prefilled.id}: customer, every line not billed yet${prefilled.supplier_name ? ', shop bank used last time' : ''}. Check quantities and prices before saving.`,
+            `เติมข้อมูลจากออเดอร์ ${prefilled.order_no || '#' + prefilled.id} ให้แล้ว: ลูกค้า, ทุกรายการที่ยังไม่เปิดบิล${prefilled.supplier_name ? ', บัญชีร้านที่เคยโอนครั้งล่าสุด' : ''} ตรวจจำนวนและราคาก่อนบันทึก`,
+            `已按订单 ${prefilled.order_no || '#' + prefilled.id} 填写：客户、未开单的项目${prefilled.supplier_name ? '、上次的卖家银行' : ''}。保存前请核对数量和价格。`)}
+        </Bi></div>
+      )}
       <Card>
         <Grid cols={4}>
           <Field label={t('Customer', 'ลูกค้า', '客户') + ' *'}>
-            {id ? <input value={h.customer_code || ''} disabled /> : <CustomerPick value={h.customer_id} onChange={(v) => { setH({ ...h, customer_id: v }); setLines([]); }} placeholder={t('Choose customer', 'เลือกลูกค้า', '选择客户')} autoFocus />}
+            {id ? <input value={h.customer_code || ''} disabled /> : <CustomerPick value={h.customer_id} onChange={(v) => { setH({ ...h, customer_id: v }); setLines([]); setPrefilled(null); }} placeholder={t('Choose customer', 'เลือกลูกค้า', '选择客户')} autoFocus={!fromOrder} />}
           </Field>
           <Field label={t('Payment invoice no. (auto)', 'เลขที่ใบโอนเงิน (รันอัตโนมัติ)', '划款单号')} hint={t('Product order numbers come from the orders below', 'เลขออเดอร์สินค้าดูจากรายการด้านล่าง', '订单号见下方')}><input value={h.code || ''} disabled={!!id} onChange={(e) => setH({ ...h, code: e.target.value })} /></Field>
           <Field label={t('Date received', 'วันที่รับของ', '收货日期')}><input type="date" value={h.date} onChange={(e) => setH({ ...h, date: e.target.value })} /></Field>
@@ -81,7 +111,7 @@ export function PackageEdit() {
       {h.customer_id && (
         <Card title={t('Order lines waiting to be received', 'รายการที่ยังไม่ได้รับของ', '等待收货')}
           actions={<><input style={{ width: 160 }} placeholder={t('Order no.', 'เลขออเดอร์', '单号')} value={orderFilter} onChange={(e) => setOrderFilter(e.target.value)} />
-            <Link to={`/orders/new?customer_id=${h.customer_id}`}><button>+ {t('New order', 'เพิ่มออเดอร์', '新订单')}</button></Link></>}>
+            <Link to={`/orders/new?customer_id=${h.customer_id}`}><button><Plus size={16} aria-hidden /> {t('New order', 'เพิ่มออเดอร์', '新订单')}</button></Link></>}>
           <Table rows={(waiting.data || []).filter((r) => !chosenIds.has(r.id))} onRow={add} maxHeight={300} columns={[
             { key: 'order_id', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (r) => <b>{r.order_no || `#${r.order_id}`}</b> },
             { key: 'order_date', label: t('Date', 'วันที่', '日期') },
@@ -91,7 +121,7 @@ export function PackageEdit() {
             { key: 'quantity', label: t('Ordered', 'สั่ง', '订'), align: 'right' },
             { key: 'received_qty', label: t('Received', 'รับแล้ว', '收到'), align: 'right' },
             { key: 'unit_price', label: t('Price ¥', 'ราคา', '单价'), money: true },
-            { key: 'add', label: '', render: () => <button className="link">+ {t('Add', 'เพิ่ม', '加')}</button> },
+            { key: 'add', label: '', render: () => <button className="link"><Plus size={16} aria-hidden /> {t('Add', 'เพิ่ม', '加')}</button> },
           ]} empty={t('Nothing left to receive for this customer', 'ไม่มีรายการรอรับของ', '没有等待收货')} />
         </Card>
       )}
@@ -116,21 +146,60 @@ export function PackageEdit() {
   );
 }
 
+/** Printed supplier bill, laid out like the paper 货运单 the shops use: title, customer / bill no., lines, bank + totals, signatures. */
 export function BillDoc({ k }: { k: any }) {
   const t = useT();
-  const { lang } = useLang();
+  const { lookups } = useApp();
+  const name = [k.firstname, k.lastname].filter(Boolean).join(' ') + (k.nickname ? ` (${k.nickname})` : '');
+  const shops = [...new Set(k.items.map((i: any) => i.supplier_name).filter(Boolean))].join(', ');
+  const qty = k.items.reduce((s: number, i: any) => s + Number(i.quantity || 0), 0);
+  const L = (_en: string, th: string, zh: string) => <span className="bd-l">{zh}<small>{th}</small></span>;
   return (
-    <div className="doc">
-      <div className="doc-head">
-        <div><h2>{t('Supplier bill', 'บิลโอนเงิน', '划款单')} {k.code}</h2>
-          <div>{t('Customer', 'ลูกค้า', '客户')}: <b>{k.customer_code}</b> · {t('Date', 'วันที่', '日期')}: {k.date}</div></div>
-        <div style={{ textAlign: 'right' }}>{k.supplier_bank}<br />{k.supplier_account}<br />{k.supplier_number}</div>
+    <div className="doc bill-doc">
+      <header className="bd-title">
+        <div className="bd-company">{lookups.settings.print_text || 'JJ Cargo'}</div>
+        <div className="bd-kind">划款单 <span>บิลโอนเงิน</span></div>
+      </header>
+      <div className="bd-head">
+        <dl>
+          <div><dt>{L('Customer', 'ลูกค้า', '客户')}</dt><dd><b className="bd-cust">{k.customer_code}</b>{name.trim() && <span className="bd-name">{name}</span>}</dd></div>
+          {shops && <div><dt>{L('Shop', 'ร้านค้า', '档口')}</dt><dd>{shops}</dd></div>}
+        </dl>
+        <dl className="bd-right">
+          <div><dt>{L('No.', 'เลขที่', '单号')}</dt><dd><b>{k.code}</b></dd></div>
+          <div><dt>{L('Date', 'วันที่', '时间')}</dt><dd>{k.date}</dd></div>
+        </dl>
       </div>
-      <table>
-        <thead><tr><th>{t('Order', 'ออเดอร์', '订单')}</th><th>{t('Product', 'รหัสสินค้า', '款号')}</th><th>{t('Category', 'ประเภท', '分类')}</th><th>{t('Qty', 'จำนวน', '数量')}</th><th>{t('Price', 'ราคา', '单价')}</th><th>{t('Total', 'รวม', '总价')}</th><th>{t('Deposit', 'มัดจำ', '定金')}</th><th>{t('Deduct', 'หัก', '扣除')}</th></tr></thead>
-        <tbody>{k.items.map((i: any) => <tr key={i.id}><td>{i.order_no || `#${i.order_id}`}</td><td>{i.product_id}</td><td>{pick({ th: i.style_th, zh: i.style_zh }, lang)}</td><td>{i.quantity}</td><td>{money(i.unit_price)}</td><td>{money(i.quantity * i.unit_price)}</td><td>{money(i.deposit)}</td><td>{money(i.deductions)}</td></tr>)}</tbody>
+      <table className="bd-lines">
+        <thead><tr>
+          <th>{L('Received', 'วันที่รับ', '收货')}</th><th>{L('Order no.', 'เลขออเดอร์', '订单单号')}</th><th>{L('Product', 'รหัสสินค้า', '款号')}</th>
+          <th className="num">{L('Qty', 'จำนวน', '数量')}</th><th className="num">{L('Price', 'ราคา', '单价')}</th><th className="num">{L('Amount', 'รวม', '总额')}</th>
+        </tr></thead>
+        <tbody>{k.items.map((i: any) => (
+          <tr key={i.id}><td>{i.receive_date || k.date}</td><td>{i.order_no || `#${i.order_id}`}</td><td>{i.product_id || '-'}</td>
+            <td className="num">{money(i.quantity)}</td><td className="num">{money(i.unit_price, 3)}</td><td className="num">{money(i.quantity * i.unit_price)}</td></tr>
+        ))}</tbody>
+        <tfoot><tr><td colSpan={3}>{L('Total qty', 'รวมจำนวน', '合计数量')}</td><td className="num">{money(qty)}</td><td /><td className="num">{money(k.total)}</td></tr></tfoot>
       </table>
-      <div className="total-line"><span>{t('Total', 'รวม', '总价')} ¥{money(k.total)}</span><span>{t('Deposit', 'มัดจำ', '定金')} ¥{money(k.deposit)}</span><span>{t('Deductions', 'หัก', '扣除')} ¥{money(k.deductions)}</span><span>{t('To pay', 'ยอดที่ต้องโอน', '应付')} ¥{money(k.due)}</span></div>
+      <div className="bd-bottom">
+        <ol className="bd-bank">
+          <li><span>{L('Bank', 'ธนาคาร', '开户银行')}</span><b>{k.supplier_bank || '-'}</b></li>
+          <li><span>{L('Account name', 'ชื่อบัญชี', '开户人')}</span><b>{k.supplier_account || '-'}</b></li>
+          <li><span>{L('Account / card no.', 'เลขบัญชี', '账户/卡号')}</span><b className="mono">{k.supplier_number || '-'}</b></li>
+          <li><span>{L('Supplier phone', 'เบอร์ร้าน', '供应商电话')}</span><b>{k.supplier_tel || '-'}</b></li>
+        </ol>
+        <dl className="bd-totals">
+          <div><dt>{L('Total', 'รวม', '共计')}</dt><dd>{money(k.total)}</dd></div>
+          <div><dt>{L('Deposit', 'มัดจำ', '预付定金')}</dt><dd>{money(k.deposit)}</dd></div>
+          {Number(k.deductions) ? <div><dt>{L('Deductions', 'หัก', '扣除')}</dt><dd>{money(k.deductions)}</dd></div> : null}
+          <div className="bd-due"><dt>{L('To pay', 'ยอดที่ต้องโอน', '余额')}</dt><dd>¥ {money(k.due)}</dd></div>
+        </dl>
+      </div>
+      <footer className="bd-foot">
+        <div>{lookups.settings.print_phone && <>{L('Phone', 'โทร', '电话')} <b>{lookups.settings.print_phone}</b></>}</div>
+        <div className="bd-sign"><span>{L('Supplier signature', 'ลายเซ็นร้านค้า', '供应商代表签名')}</span><i /></div>
+        <div className="bd-sign"><span>{L('Handled by', 'ผู้ทำรายการ', '经手人')}</span><b>{k.created_by || ''}</b></div>
+      </footer>
     </div>
   );
 }
@@ -141,18 +210,21 @@ export function PackageView() {
   const nav = useNavigate();
   const can = useCan();
   const { data: k, reload } = useApi<any>(`/packages/${id}`);
-  const [print, setPrint] = useState(false);
+  const [sp, setSp] = useSearchParams();
+  const [print, setPrint] = useState(sp.get('printed') === 'new'); // just saved: open the print view straight away
+  const closePrint = () => { setPrint(false); if (sp.has('printed')) setSp({}, { replace: true }); };
   const [ded, setDed] = useState<any>(null);
   const { run } = useAction();
+  const { ask } = useAsk();
   if (!k) return null;
   const del = async () => {
-    if (!confirm(t('Delete this bill?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'))) return;
+    if (!(await ask(t('Delete this bill?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'), { danger: true }))) return;
     if (await run(() => api(`/packages/${k.id}`, { method: 'DELETE' }), t('Deleted', 'ลบแล้ว', '已删除'))) nav('/packages');
   };
   return (
-    <Page title={<>{t('Bill', 'บิล', '划款单')} {k.code} {k.is_done_paid ? <Badge tone="good">{t('Paid', 'จ่ายแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</Badge>}</>}
+    <Page back="/orders?tab=bills" title={<>{t('Bill', 'บิล', '划款单')} {k.code} {k.is_done_paid ? <Badge tone="good">{t('Paid', 'จ่ายแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</Badge>}</>}
       actions={<>
-        <button onClick={() => setPrint(true)}>🖨 {t('Print', 'ปริ้น', '打印')}</button>
+        <button onClick={() => setPrint(true)}><Printer size={16} aria-hidden /> {t('Print', 'ปริ้น', '打印')}</button>
         {!k.payments.length && <button onClick={() => nav(`/packages/${k.id}/edit`)}>{t('Edit', 'แก้ไข', '修改')}</button>}
         {!k.payments.length && <button className="danger" onClick={del}>{t('Delete', 'ลบ', '删除')}</button>}
         {can.menu('invoice.payment') && !k.is_done_paid && <button className="primary" onClick={() => nav(`/invoice-payments/new?bill=${k.code}`)}>{t('Pay this bill', 'จ่ายบิลนี้', '付款')}</button>}
@@ -182,7 +254,7 @@ export function PackageView() {
           <Table rows={k.statements} columns={[
             { key: 'product_id', label: t('Product', 'สินค้า', '产品') }, { key: 'type', label: t('Type', 'ประเภท', '类别') },
             { key: 'amount', label: '¥', money: true, sum: true }, { key: 'description', label: t('Note', 'หมายเหตุ', '备注') },
-            { key: 'x', label: '', render: (r) => <button className="link danger" onClick={async () => { if (await run(() => api(`/package-statements/${r.id}`, { method: 'DELETE' }))) reload(); }}>×</button> },
+            { key: 'x', label: '', render: (r) => <button className="link danger" onClick={async () => { if (await run(() => api(`/package-statements/${r.id}`, { method: 'DELETE' }))) reload(); }}><X size={16} aria-hidden /><span className="sr-only">Remove</span></button> },
           ]} />
         </Card>
         <Card title={t('Payments', 'การจ่ายเงิน', '付款')}>
@@ -209,24 +281,24 @@ export function PackageView() {
           </Grid>
         </Modal>
       )}
-      <PrintModal open={print} onClose={() => setPrint(false)} title={t('Print bill', 'ปริ้นบิล', '打印')}><BillDoc k={k} /></PrintModal>
+      <PrintModal open={print} onClose={closePrint} title={t('Print bill', 'ปริ้นบิล', '打印')}><BillDoc k={k} /></PrintModal>
     </Page>
   );
 }
 
-export function PackageSearch() {
+/** Supplier bill list, shown as the second tab of the Orders screen. */
+export function BillList({ search, onSearch }: { search: string; onSearch: (v: string) => void }) {
   const t = useT();
   const nav = useNavigate();
   const [q, setQ] = useState<any>({ from: monthStart(), to: '', paid: '' });
-  const { data } = useApi<any[]>('/packages', q);
+  const { data } = useApi<any[]>('/packages', { ...q, search, from: search ? '' : q.from, to: search ? '' : q.to });
   return (
-    <Page title={t('Search supplier bills', 'ค้นหาบิลโอนเงิน', '找划款单')} actions={<Link to="/packages/new"><button className="primary">+ {t('New bill', 'เปิดบิลโอนใหม่', '开划款单')}</button></Link>}>
+    <>
       <Card>
-        <Grid cols={6}>
+        <Grid cols={5}>
+          <SearchBox value={search} onChange={onSearch} />
           <Field label={t('Customer', 'ลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => setQ({ ...q, customer_id: v })} /></Field>
-          <Field label={t('Bill code', 'เลขบิล', '划款单号')}><input value={q.code || ''} onChange={(e) => setQ({ ...q, code: e.target.value })} /></Field>
-          <Field label={t('Order no.', 'เลขออเดอร์', '单号')}><input value={q.order_id || ''} onChange={(e) => setQ({ ...q, order_id: e.target.value })} /></Field>
-          <DateRange from={q.from} to={q.to} onChange={(from, to) => setQ({ ...q, from, to })} />
+          <DateRange from={search ? '' : q.from} to={search ? '' : q.to} onChange={(from, to) => setQ({ ...q, from, to })} />
           <Field label={t('Paid?', 'สถานะ', '状态')}>
             <select value={q.paid} onChange={(e) => setQ({ ...q, paid: e.target.value })}>
               <option value="">{t('All', 'ทั้งหมด', '全部')}</option><option value="0">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</option><option value="1">{t('Paid', 'จ่ายแล้ว', '已付')}</option>
@@ -248,6 +320,6 @@ export function PackageSearch() {
         { key: 'st', label: '', render: (r) => r.is_done_paid ? <Badge tone="good">{t('Paid', 'จ่ายแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</Badge> },
         { key: 'created_by', label: t('By', 'โดย', '人') },
       ]} />
-    </Page>
+    </>
   );
 }

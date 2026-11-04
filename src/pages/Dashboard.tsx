@@ -1,65 +1,121 @@
 import { Link, useNavigate } from 'react-router-dom';
+import { ChevronDown, ChevronRight, RefreshCw, type LucideIcon } from 'lucide-react';
+import { MENU } from '../../shared/menus';
 import { SHIPMENT_STATUSES } from '../../shared/statuses';
-import type { ReactNode } from 'react';
 import { useApi, useT, money, useCan, useLang, pick } from '../lib';
-import { Page, Card, Stat, Table, Badge } from '../ui';
+import { Page, Card, Stat, Table, Badge, Bi } from '../ui';
+import { ITEM_ICON } from '../nav';
 
-// A dashboard figure that opens the related screen when the user may see it.
-function Tile({ to, menu, ...p }: { to: string; menu: string; label: ReactNode; value: ReactNode; tone?: 'good' | 'bad' | 'warn' }) {
-  const can = useCan();
-  return can.menu(menu) ? <Link to={to} className="stat-link"><Stat {...p} /></Link> : <Stat {...p} />;
-}
+const ITEMS = Object.fromEntries(MENU.flatMap((g) => g.items.map((i) => [i.key, i])));
+
+// The daily cargo flow, in the order the work happens.
+const FLOW = ['order.new', 'package.new', 'packing.new', 'packing.offchina', 'shipment.summary', 'payment.check'];
 
 export default function Dashboard() {
   const t = useT();
   const can = useCan();
-  const { lang } = useLang();
   const nav = useNavigate();
-  const go = (menu: string, to: string) => (can.menu(menu) ? () => nav(to) : undefined);
-  const { data: d, reload } = useApi<any>('/dashboard');
-  if (!d) return <Page title={t('Dashboard', 'แดชบอร์ด', '仪表板')}><div className="muted">…</div></Page>;
+  const { lang } = useLang();
+    const { data: d, reload, loading } = useApi<any>('/dashboard');
+  const label = (k: string) => pick(ITEMS[k], lang);
+
+  // Work waiting for someone, each linking to the screen where it gets done.
+  const todo: { key: string; menu: string; text: string; sub?: string; n: number; shown?: string; tone?: 'warn' | 'bad' }[] = d ? [
+    { key: 'pay', menu: 'payment.check', text: t('Payment notices to check', 'ยอดแจ้งโอนรอตรวจ', '待核对付款'), sub: d.pendingPayments ? `฿ ${money(d.pendingAmount)}` : undefined, n: d.pendingPayments, tone: 'warn' as const },
+    { key: 'pack', menu: 'packing.new', text: t('Order lines waiting to pack', 'รายการสินค้ารอแพค', '等待打包'), n: d.waitingToPack },
+    { key: 'load', menu: 'packing.offchina', text: t('Boxes not on a container yet', 'กล่อง/กระสอบที่ยังไม่ขึ้นตู้', '未发货包'), n: d.notLoaded },
+    { key: 'bills', menu: 'invoice.payment', text: t('Supplier bills not fully paid', 'บิลโอนที่ยังจ่ายร้านค้าไม่ครบ', '未付划款单'), n: d.unpaidBills },
+    { key: 'ship', menu: 'unpaid', text: t('Unpaid shipping (posted)', 'ค่าขนส่งที่ลูกค้ายังค้างจ่าย', '未付运费'), n: d.unpaidShipping ? 1 : 0, shown: d.unpaidShipping ? `฿ ${money(d.unpaidShipping)}` : '0', tone: 'bad' as const },
+    { key: 'exp', menu: 'expense.thai', text: t('Expenses waiting for a check-mark', 'ค่าใช้จ่ายรอตรวจ', '费用待校验'), n: d.unchecked.expenses },
+    { key: 'tr', menu: 'transfer.thai', text: t('Customer deposit / withdraw to check', 'ฝาก-ถอนเงินลูกค้ารอตรวจ', '存款 - 提款待校验'), n: d.unchecked.transfers },
+    { key: 'acc', menu: 'account.transfer', text: t('Account transfers to check', 'โอนเงินระหว่างบัญชีรอตรวจ', '帐户之间转移待校验'), n: d.unchecked.accountTransfers },
+    { key: 'inc', menu: 'income.other', text: t('Other income to check', 'รายรับอื่นๆ รอตรวจ', '其他收入待校验'), n: d.unchecked.otherIncome },
+    { key: 'bp', menu: 'invoice.paymentSearch', text: t('Supplier bill payments to check', 'รายการจ่ายบิลรอตรวจ', '付款待校验'), n: d.unchecked.billPayments },
+  ].filter((x) => can.menu(x.menu)) : [];
+  const open = todo.filter((x) => x.n > 0);
+  const done = todo.filter((x) => !x.n);
+  const flow = FLOW.filter((k) => can.menu(k));
+  
   return (
-    <Page title={t('Dashboard', 'แดชบอร์ด', '仪表板')} actions={<button onClick={reload}>↻ {t('Refresh', 'รีเฟรช', '刷新')}</button>}>
-      <div className="stats">
-        <Tile to="/bank/total" menu="bank.total" label={t('Money in Thai accounts (THB)', 'เงินไทยทั้งหมด (บาท)', '泰铢总额')} value={money(d.totalThb)} />
-        <Tile to="/bank/total" menu="bank.total" label={t('Money in China accounts (CNY)', 'เงินหยวนทั้งหมด (หยวน)', '人民币总额')} value={money(d.totalCny)} />
-        <Tile to="/exchange" menu="exchange" label={t('Exchange rate CNY→THB', 'เรทแลกเงิน', '汇率')} value={d.rate ? money(d.rate, 3) : '—'} />
-        <Tile to="/customers" menu="customer.info" label={t('Customers', 'ลูกค้า', '客户')} value={d.customers} />
-        <Tile to="/payments/check" menu="payment.check" label={t('Payment notices to check', 'ยอดแจ้งโอนรอตรวจ', '待核对付款')} value={`${d.pendingPayments} · ฿${money(d.pendingAmount)}`} tone={d.pendingPayments ? 'warn' : undefined} />
-        <Tile to="/shipments/search" menu="shipment.search" label={t('Unpaid shipping (posted)', 'ค่าขนส่งค้างชำระ', '未付运费')} value={money(d.unpaidShipping)} tone={d.unpaidShipping ? 'bad' : undefined} />
-        <Tile to="/packages" menu="package.search" label={t('Supplier bills not fully paid', 'บิลโอนที่ยังจ่ายไม่ครบ', '未付划款单')} value={d.unpaidBills} />
-        <Tile to="/packing/new" menu="packing.new" label={t('Order lines waiting to pack', 'รายการรอแพค', '等待打包')} value={d.waitingToPack} />
-        <Tile to="/shipments/load" menu="packing.offchina" label={t('Boxes not on a container yet', 'กระสอบที่ยังไม่ขึ้นตู้', '未发货包')} value={d.notLoaded} />
-      </div>
-      <div className="split">
-        <Card title={t('Recent shipment rounds', 'รอบขนส่งล่าสุด', '最近发货单')} actions={can.menu('shipment.list') && <Link to="/shipments">{t('All', 'ทั้งหมด', '全部')} →</Link>}>
-          <Table columns={[
-            { key: 'code', label: t('Round', 'รอบ', '发货单') },
-            { key: 'date', label: t('Date', 'วันที่', '日期') },
-            { key: 'boxes', label: t('Boxes', 'กระสอบ', '包'), align: 'right' },
-            { key: 'weight', label: t('Weight kg', 'น้ำหนัก', '重量'), money: true },
-            { key: 'status', label: t('Status', 'สถานะ', '状态'), render: (r) => { const s = SHIPMENT_STATUSES.find((x) => x.key === r.status); return s ? <Badge tone={s.tone}>{pick(s, lang)}</Badge> : r.arrived_date ? <Badge tone="good">{r.arrived_date}</Badge> : <Badge tone="info">{t('Packing', 'กำลังรวมของ', '集货中')}</Badge>; } },
-          ]} rows={d.recentShipments} onRow={can.menu('shipment.list') ? (r) => nav(`/shipments/${r.id}/report`) : undefined} />
+    <Page title={t('Dashboard', 'แดชบอร์ด', '仪表板')}
+      actions={<button onClick={reload} disabled={loading}><RefreshCw size={16} aria-hidden className={loading ? 'spin' : ''} /> {t('Refresh', 'รีเฟรช', '刷新')}</button>}>
+      {flow.length > 1 && (
+        <Card title={t('Daily work, step by step', 'ขั้นตอนงานประจำวัน', '日常流程')}>
+          <nav className="flow" aria-label={t('Daily work', 'ขั้นตอนงาน', '日常流程')}>
+            {flow.map((k, i) => {
+              const Ico: LucideIcon = ITEM_ICON[k];
+              return (
+                <Link key={k} to={ITEMS[k].path}>
+                  <span className="flow-ico"><Ico size={18} aria-hidden /></span>
+                  <span className="flow-step">{t('Step', 'ขั้นที่', '步骤')} {i + 1}</span>
+                  <span className="flow-name"><Bi stack>{label(k)}</Bi></span>
+                </Link>
+              );
+            })}
+          </nav>
         </Card>
-        <Card title={t('Waiting for a check-mark', 'รายการรอตรวจสอบ', '待校验')}>
-          <Table rowKey="k" onRow={(r: any) => r.go?.()} columns={[{ key: 'k', label: t('Area', 'รายการ', '项目') }, { key: 'v', label: t('Count', 'จำนวน', '数量'), align: 'right' }]}
-            rows={[
-              { k: t('Expenses', 'ค่าใช้จ่าย', '费用'), v: d.unchecked.expenses, go: go('expense.thai', '/expenses/TH') },
-              { k: t('Customer deposit / withdraw', 'ฝาก-ถอนเงินลูกค้า', '存款 - 提款'), v: d.unchecked.transfers, go: go('transfer.thai', '/transfers/TH') },
-              { k: t('Account transfers', 'โอนเงินระหว่างบัญชี', '帐户之间转移'), v: d.unchecked.accountTransfers, go: go('account.transfer', '/bank/transfers') },
-              { k: t('Other income', 'รายรับอื่นๆ', '其他收入'), v: d.unchecked.otherIncome, go: go('income.other', '/other-income') },
-              { k: t('Supplier bill payments', 'จ่ายบิล', '付款'), v: d.unchecked.billPayments, go: go('invoice.paymentSearch', '/invoice-payments') },
-            ]} />
-        </Card>
+      )}
+
+      <div className="dash">
+        <div>
+          <Card title={t('Waiting for you', 'งานที่รอทำ', '待办事项')} actions={d && <span className="muted">{open.length ? `${open.length} ${t('items', 'เรื่อง', '项')}` : t('All clear', 'เคลียร์หมดแล้ว', '全部完成')}</span>}>
+            {!d ? <div className="skeleton" /> : (
+              <ul className="todo">
+                {open.map((x) => {
+                  const Ico: LucideIcon = ITEM_ICON[x.menu];
+                  return (
+                    <li key={x.key}>
+                      <Link to={ITEMS[x.menu].path}>
+                        <span className={`todo-ico ${x.n ? x.tone || '' : ''}`}><Ico size={18} aria-hidden /></span>
+                        <span className="todo-text"><Bi>{x.text}</Bi>{x.sub && <div className="todo-sub">{x.sub}</div>}</span>
+                        <span className={`todo-num${x.n ? '' : ' zero'}`}>{x.shown ?? x.n}</span>
+                        <ChevronRight size={16} aria-hidden className="chev" />
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {done.length > 0 && (
+              <details className="more done-list">
+                <summary><ChevronDown size={16} aria-hidden className="chev" /> <span className="muted" style={{ fontWeight: 500 }}>{t('Nothing waiting', 'ไม่มีงานค้าง', '没有待办')} ({done.length})</span></summary>
+                <div className="chips">{done.map((x) => <Link key={x.key} className="chip" to={ITEMS[x.menu].path}><Bi>{x.text}</Bi></Link>)}</div>
+              </details>
+            )}
+          </Card>
+          {d && (
+            <Card title={t('Recent shipment rounds', 'รอบขนส่งล่าสุด', '最近发货单')} actions={can.menu('shipment.list') && <Link to="/shipments">{t('All rounds', 'ดูทั้งหมด', '全部')}</Link>}>
+              <Table columns={[
+                { key: 'code', label: t('Round', 'รอบ', '发货单'), render: (r) => <b>{r.code}</b> },
+                { key: 'date', label: t('Date', 'วันที่', '日期') },
+                { key: 'boxes', label: t('Boxes', 'กล่อง', '包'), align: 'right' },
+                { key: 'weight', label: t('Weight kg', 'น้ำหนัก กก.', '重量'), money: true },
+                { key: 'status', label: t('Status', 'สถานะ', '状态'), render: (r) => { const s = SHIPMENT_STATUSES.find((x) => x.key === r.status); return s ? <Badge tone={s.tone}><Bi>{pick(s, lang)}</Bi></Badge> : r.arrived_date ? <Badge tone="good">{r.arrived_date}</Badge> : <Badge tone="info">{t('Packing', 'กำลังรวมของ', '集货中')}</Badge>; } },
+              ]} rows={d.recentShipments} onRow={can.menu('shipment.list') ? (r) => nav(`/shipments/${r.id}/report`) : undefined} />
+            </Card>
+          )}
+        </div>
+        <div>
+          {d && (
+            <div className="stats">
+              <Stat label={t('Thai accounts (THB)', 'เงินในบัญชีไทย (บาท)', '泰铢总额')} value={`฿ ${money(d.totalThb)}`} to={can.menu('bank.total') ? '/bank/total' : undefined} />
+              <Stat label={t('China accounts (CNY)', 'เงินในบัญชีจีน (หยวน)', '人民币总额')} value={`¥ ${money(d.totalCny)}`} to={can.menu('bank.total') ? '/bank/total' : undefined} />
+              <Stat label={t('Exchange rate CNY→THB', 'เรทแลกเงิน', '汇率')} value={d.rate ? money(d.rate, 3) : '—'} to={can.menu('exchange') ? '/exchange' : undefined} />
+              <Stat label={t('Customers', 'ลูกค้า', '客户')} value={d.customers} to={can.menu('customer.info') ? '/customers' : undefined} />
+            </div>
+          )}
+          {d && (
+            <Card title={t('Account balances', 'ยอดเงินแต่ละบัญชี', '各账户余额')}>
+              <Table columns={[
+                { key: 'name', label: t('Account', 'บัญชี', '帐户') },
+                { key: 'is_cash', label: t('Type', 'ประเภท', '类别'), render: (r) => r.is_cash ? <Bi>{t('Cash', 'เงินสด', '现金')}</Bi> : <Bi>{t('Bank', 'ธนาคาร', '银行')}</Bi> },
+                { key: 'balance', label: t('Balance', 'ยอดคงเหลือ', '余额'), money: true, render: (r) => <>{r.is_thai ? '฿' : '¥'} {money(r.balance)}</> },
+              ]} rows={d.banks} />
+            </Card>
+          )}
+        </div>
       </div>
-      <Card title={t('Account balances', 'ยอดเงินแต่ละบัญชี', '各账户余额')}>
-        <Table columns={[
-          { key: 'name', label: t('Account', 'บัญชี', '帐户') },
-          { key: 'is_thai', label: t('Currency', 'หน่วยเงิน', '币种'), render: (r) => r.is_thai ? 'THB' : 'CNY' },
-          { key: 'is_cash', label: t('Type', 'ประเภท', '类别'), render: (r) => r.is_cash ? t('Cash', 'เงินสด', '现金') : t('Bank', 'ธนาคาร', '银行') },
-          { key: 'balance', label: t('Balance', 'ยอดคงเหลือ', '余额'), money: true },
-        ]} rows={d.banks} />
-      </Card>
+
     </Page>
   );
 }

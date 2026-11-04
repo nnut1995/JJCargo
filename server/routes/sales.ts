@@ -120,6 +120,14 @@ export function salesRouter() {
     if (req.query.from) { w.push('o.order_date >= ?'); p.push(req.query.from); }
     if (req.query.to) { w.push('o.order_date <= ?'); p.push(req.query.to); }
     if (req.query.q) { w.push('(o.supplier_name LIKE ? OR EXISTS (SELECT 1 FROM order_items x WHERE x.order_id = o.id AND x.product_id LIKE ?))'); p.push(`%${req.query.q}%`, `%${req.query.q}%`); }
+    // one box for everything (replaces the old "lookup" screen): order no., shop, product id or supplier bill code
+    if (req.query.search) {
+      const s = String(req.query.search).trim();
+      w.push(`(CAST(o.id AS TEXT) = ? OR o.order_no LIKE ? OR o.supplier_name LIKE ?
+        OR EXISTS (SELECT 1 FROM order_items x WHERE x.order_id = o.id AND x.product_id LIKE ?)
+        OR EXISTS (SELECT 1 FROM order_items x JOIN package_items pi ON pi.order_item_id = x.id JOIN packages k ON k.id = pi.package_id WHERE x.order_id = o.id AND k.code LIKE ?))`);
+      p.push(s.replace(/^#/, ''), `%${s}%`, `%${s}%`, `%${s}%`, `%${s}%`);
+    }
     res.json(all(`SELECT o.*, c.code AS customer_code, c.firstname, c.nickname,
         (SELECT COUNT(*) FROM order_items i WHERE i.order_id = o.id) AS lines,
         (SELECT COALESCE(SUM(quantity*unit_price),0) FROM order_items i WHERE i.order_id = o.id) AS total,
@@ -129,9 +137,13 @@ export function salesRouter() {
       FROM orders o JOIN customers c ON c.id = o.customer_id WHERE ${w.join(' AND ')} ORDER BY o.id DESC LIMIT 1000`, p));
   });
   r.get('/orders/:id', (req, res) => {
-    const o = get<any>('SELECT o.*, c.code AS customer_code FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?', [req.params.id]);
+    const o = get<any>('SELECT o.*, c.code AS customer_code, c.firstname, c.lastname, c.nickname, c.phone AS customer_phone FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?', [req.params.id]);
     if (!o) throw new HttpError(404, 'ไม่พบออเดอร์ / Order not found');
     o.items = orderItemProgress('oi.order_id = ?', [o.id]);
+    // Shop bank used last time for this shop, so a new bill from this order can start with it.
+    o.last_supplier_bank_id = o.supplier_name ? get<any>(`SELECT k.supplier_bank_id AS id FROM packages k
+      JOIN package_items pi ON pi.package_id = k.id JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders x ON x.id = oi.order_id
+      WHERE x.supplier_name = ? AND k.supplier_bank_id IS NOT NULL ORDER BY k.date DESC, k.id DESC LIMIT 1`, [o.supplier_name])?.id ?? null : null;
     res.json(o);
   });
   function saveOrderItems(orderId: number, items: any[]) {
@@ -215,6 +227,12 @@ export function salesRouter() {
     if (req.query.from) { w.push('k.date >= ?'); p.push(req.query.from); }
     if (req.query.to) { w.push('k.date <= ?'); p.push(req.query.to); }
     if (req.query.paid === '0' || req.query.paid === '1') { w.push('k.is_done_paid = ?'); p.push(Number(req.query.paid)); }
+    if (req.query.search) {
+      const s = String(req.query.search).trim();
+      w.push(`(k.code LIKE ? OR EXISTS (SELECT 1 FROM package_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id
+        WHERE pi.package_id = k.id AND (CAST(o.id AS TEXT) = ? OR o.order_no LIKE ? OR oi.product_id LIKE ? OR o.supplier_name LIKE ?)))`);
+      p.push(`%${s}%`, s.replace(/^#/, ''), `%${s}%`, `%${s}%`, `%${s}%`);
+    }
     if (req.query.order_id) { w.push('EXISTS (SELECT 1 FROM package_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id WHERE pi.package_id = k.id AND (oi.order_id = ? OR o.order_no LIKE ?))'); p.push(req.query.order_id, `%${req.query.order_id}%`); }
     const rows = all<any>(`SELECT k.*, c.code AS customer_code,
         (SELECT GROUP_CONCAT(DISTINCT COALESCE(o.order_no, '#' || o.id)) FROM package_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id WHERE pi.package_id = k.id) AS order_nos, sb.bank AS supplier_bank, sb.account_name AS supplier_account
@@ -224,11 +242,11 @@ export function salesRouter() {
   });
   r.get('/packages/next-code', (_req, res) => res.json({ code: nextPackageCode() }));
   r.get('/packages/:id', (req, res) => {
-    const k = get<any>(`SELECT k.*, c.code AS customer_code, sb.bank AS supplier_bank, sb.account_name AS supplier_account, sb.account_number AS supplier_number
+    const k = get<any>(`SELECT k.*, c.code AS customer_code, c.firstname, c.lastname, c.nickname, c.phone AS customer_phone, sb.bank AS supplier_bank, sb.account_name AS supplier_account, sb.account_number AS supplier_number, sb.tel AS supplier_tel
       FROM packages k JOIN customers c ON c.id = k.customer_id LEFT JOIN supplier_banks sb ON sb.id = k.supplier_bank_id
       WHERE k.id = ? OR k.code = ?`, [req.params.id, req.params.id]);
     if (!k) throw new HttpError(404, 'ไม่พบบิล / Bill not found');
-    k.items = all<any>(`SELECT pi.*, oi.order_id, o.order_no, oi.product_id, oi.quantity AS ordered_qty, s.th AS style_th, s.zh AS style_zh,
+    k.items = all<any>(`SELECT pi.*, oi.order_id, o.order_no, o.order_date, o.supplier_name, o.supplier_phone, oi.product_id, oi.quantity AS ordered_qty, s.th AS style_th, s.zh AS style_zh,
         COALESCE((SELECT SUM(amount) FROM package_item_statements st WHERE st.package_item_id = pi.id),0) AS deductions
       FROM package_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id LEFT JOIN styles s ON s.id = oi.style_id
       WHERE pi.package_id = ? ORDER BY pi.id`, [k.id]);

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useT, money, today, monthStart } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, BankPick, DateRange, CheckedFilter, Badge, Modal, Stat, Tabs, useAction } from '../ui';
+import { Page, Card, Grid, Field, Table, CustomerPick, BankPick, DateRange, CheckedFilter, Badge, Modal, Stat, Tabs, useAction, useAsk } from '../ui';
+import { Check, Plus, X } from 'lucide-react';
 import { CrudPage } from './Crud';
 
 /** DepositWithdrawChinaForm / DepositWithdrawThaiForm */
@@ -16,6 +17,7 @@ export function Transfers() {
   const [sel, setSel] = useState<Set<any>>(new Set());
   const [bal, setBal] = useState<number | null>(null);
   const { run, busy } = useAction();
+  const { ask } = useAsk();
   useEffect(() => { setSel(new Set()); }, [region]);
   useEffect(() => {
     if (edit?.customer_id) api(`/customers/${edit.customer_id}`).then((c) => setBal(cn ? c.balance_cny : c.balance_thb)); else setBal(null);
@@ -27,8 +29,8 @@ export function Transfers() {
   const cur = cn ? '¥' : '฿';
   return (
     <Page title={cn ? t('Customer deposit / withdraw in China', 'ลูกค้าฝากเงิน-ถอนเงิน กวางโจว', '客户在中国 存款 - 提款') : t('Customer deposit / withdraw in Thailand', 'ลูกค้าฝาก-ถอนเงินเมืองไทย', '客户在泰国 存款 - 提款')}
-      actions={<>{can.verify('transfer') && <button disabled={!sel.size} onClick={async () => { if (await run(() => api(`/transfers/${region}/check`, { body: { ids: [...sel] } }))) { setSel(new Set()); reload(); } }}>✓ {t('Check selected', 'ตรวจแล้ว', '校验')} ({sel.size})</button>}
-        <button className="primary" onClick={() => setEdit({ date: today(), kind: 'in', amount: '', bank_fee: 0, service_fee: 0 })}>+ {t('Add', 'เพิ่ม', '新增')}</button></>}>
+      actions={<>{can.verify('transfer') && <button disabled={!sel.size} onClick={async () => { if (await run(() => api(`/transfers/${region}/check`, { body: { ids: [...sel] } }))) { setSel(new Set()); reload(); } }}><Check size={16} aria-hidden /> {t('Check selected', 'ตรวจแล้ว', '校验')} ({sel.size})</button>}
+        <button className="primary" onClick={() => setEdit({ date: today(), kind: 'in', amount: '', bank_fee: 0, service_fee: 0 })}><Plus size={16} aria-hidden /> {t('Add', 'เพิ่ม', '新增')}</button></>}>
       <Card>
         <Grid cols={5}>
           <Field label={t('Customer', 'ลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => setQ({ ...q, customer_id: v })} /></Field>
@@ -47,8 +49,8 @@ export function Transfers() {
           { key: 'service_fee', label: t('Service fee', 'ค่าบริการ', '服务费'), money: true, sum: true },
           { key: 'bank', label: t('Account', 'บัญชี', '帐户') },
           { key: 'remark', label: t('Remark', 'หมายเหตุ', '备注') },
-          { key: 'checked', label: t('Checked', 'ตรวจ', '校验'), render: (r) => r.checked ? <Badge tone="good">✓ {r.checked_by}</Badge> : <Badge tone="warn">—</Badge> },
-          { key: 'x', label: '', render: (r) => !r.checked && <button className="link danger" onClick={async (e) => { e.stopPropagation(); if (confirm('?') && await run(() => api(`/transfers/${region}/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button> },
+          { key: 'checked', label: t('Checked', 'ตรวจ', '校验'), render: (r) => r.checked ? <Badge tone="good"><Check size={12} aria-hidden /> {r.checked_by}</Badge> : <Badge tone="warn">—</Badge> },
+          { key: 'x', label: '', render: (r) => !r.checked && <button className="link danger" onClick={async (e) => { e.stopPropagation(); if (await ask(t('Delete this item?', 'ต้องการลบรายการนี้?', '你确定要删除吗?'), { danger: true }) && await run(() => api(`/transfers/${region}/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button> },
         ]} />
       {edit && (
         <Modal open title={cn ? t('China deposit / withdraw', 'ฝาก-ถอนเงิน กวางโจว', '中国 存款 - 提款') : t('Thai deposit / withdraw', 'ฝาก-ถอนเงิน เมืองไทย', '泰国 存款 - 提款')} onClose={() => setEdit(null)}
@@ -166,6 +168,7 @@ export function Exchange() {
   const [item, setItem] = useState<any>(null);
   const [sel, setSel] = useState<Set<any>>(new Set());
   const { run } = useAction();
+  const { ask } = useAsk();
   const refresh = () => { list.reload(); detail.reload(); };
   return (
     <>
@@ -179,13 +182,13 @@ export function Exchange() {
       )}
       {tab === 'batches' && (
         <Page title={t('Currency exchange', 'การแลกเปลี่ยนเงิน', '换钱')}
-          actions={can.verify('exchange') && <button disabled={!sel.size} onClick={async () => { if (await run(() => api('/exchanges/check', { body: { ids: [...sel] } }))) { setSel(new Set()); refresh(); } }}>✓ {t('Check', 'ตรวจแล้ว', '校验')} ({sel.size})</button>}>
+          actions={can.verify('exchange') && <button disabled={!sel.size} onClick={async () => { if (await run(() => api('/exchanges/check', { body: { ids: [...sel] } }))) { setSel(new Set()); refresh(); } }}><Check size={16} aria-hidden /> {t('Check', 'ตรวจแล้ว', '校验')} ({sel.size})</button>}>
           <Card title={t('New exchange', 'แลกเงินไทย->เป็นเงินจีน', '新换钱')}>
             <Grid cols={4}>
               <Field label={t('Date', 'วันที่', '日期')}><input type="date" value={nb.date} onChange={(e) => setNb({ ...nb, date: e.target.value })} /></Field>
               <Field label={t('Rate THB / CNY', 'เรท', '汇率')}><input type="number" step="any" value={nb.rate} onChange={(e) => setNb({ ...nb, rate: e.target.value })} /></Field>
               <Field label={t('Yuan amount', 'ยอดหยวน', '人民币')} hint={nb.rate && nb.yuan_amount ? `= ฿${money(nb.rate * nb.yuan_amount)}` : undefined}><input type="number" step="any" value={nb.yuan_amount} onChange={(e) => setNb({ ...nb, yuan_amount: e.target.value })} /></Field>
-              <Field label=" "><button className="primary" onClick={async () => { const r: any = await run(() => api('/exchanges', { body: nb })); if (r) { setNb({ ...nb, rate: '', yuan_amount: '' }); setCur(r.id); refresh(); } }}>+ {t('Add', 'เพิ่ม', '新增')}</button></Field>
+              <Field label=" "><button className="primary" onClick={async () => { const r: any = await run(() => api('/exchanges', { body: nb })); if (r) { setNb({ ...nb, rate: '', yuan_amount: '' }); setCur(r.id); refresh(); } }}><Plus size={16} aria-hidden /> {t('Add', 'เพิ่ม', '新增')}</button></Field>
             </Grid>
           </Card>
           <Card><Grid cols={4}><DateRange from={q.from} to={q.to} onChange={(from, to) => setQ({ ...q, from, to })} /><CheckedFilter value={q.checked} onChange={(v) => setQ({ ...q, checked: v })} /></Grid></Card>
@@ -193,19 +196,19 @@ export function Exchange() {
             <Table rows={list.data} onRow={(r) => setCur(r.id)} rowClass={(r) => (r.id === cur ? 'on' : '')} selectable={(r) => !r.checked} selected={sel} onSelect={setSel} columns={[
               { key: 'date', label: t('Date', 'วันที่', '日期') }, { key: 'rate', label: t('Rate', 'เรท', '汇率'), align: 'right' },
               { key: 'yuan_amount', label: '¥', money: true, sum: true }, { key: 'baht_amount', label: '฿', money: true, sum: true },
-              { key: 'st', label: t('Status', 'สถานะ', '状态'), render: (r) => r.checked ? <Badge tone="good">✓ {r.checked_by}</Badge> : r.complete ? <Badge tone="info">{t('Complete', 'ครบแล้ว', '完成')}</Badge> : <Badge tone="warn">{money(r.paid_thb)} / {money(r.got_cny)}</Badge> },
+              { key: 'st', label: t('Status', 'สถานะ', '状态'), render: (r) => r.checked ? <Badge tone="good"><Check size={12} aria-hidden /> {r.checked_by}</Badge> : r.complete ? <Badge tone="info">{t('Complete', 'ครบแล้ว', '完成')}</Badge> : <Badge tone="warn">{money(r.paid_thb)} / {money(r.got_cny)}</Badge> },
             ]} />
             {detail.data && (
               <Card title={`${detail.data.date} · ¥${money(detail.data.yuan_amount)} @ ${detail.data.rate}`}
                 actions={!detail.data.checked && <>
-                  <button onClick={() => setItem({ is_thai: 1, date: today(), amount: '', bank_fee: 0 })}>+ {t('Baht paid', 'เพิ่มเงินไทย', '泰铢')}</button>
-                  <button onClick={() => setItem({ is_thai: 0, date: today(), amount: '', bank_fee: 0 })}>+ {t('Yuan received', 'เพิ่มเงินจีน', '人民币')}</button>
-                  <button className="danger" onClick={async () => { if (confirm('?') && await run(() => api(`/exchanges/${cur}`, { method: 'DELETE' }))) { setCur(null); list.reload(); } }}>{t('Delete', 'ลบ', '删除')}</button></>}>
+                  <button onClick={() => setItem({ is_thai: 1, date: today(), amount: '', bank_fee: 0 })}><Plus size={16} aria-hidden /> {t('Baht paid', 'เพิ่มเงินไทย', '泰铢')}</button>
+                  <button onClick={() => setItem({ is_thai: 0, date: today(), amount: '', bank_fee: 0 })}><Plus size={16} aria-hidden /> {t('Yuan received', 'เพิ่มเงินจีน', '人民币')}</button>
+                  <button className="danger" onClick={async () => { if (await ask(t('Delete this item?', 'ต้องการลบรายการนี้?', '你确定要删除吗?'), { danger: true }) && await run(() => api(`/exchanges/${cur}`, { method: 'DELETE' }))) { setCur(null); list.reload(); } }}>{t('Delete', 'ลบ', '删除')}</button></>}>
                 <Table rows={detail.data.items} columns={[
                   { key: 'is_thai', label: '', render: (r) => r.is_thai ? '฿ ' + t('out', 'ออก', '出') : '¥ ' + t('in', 'เข้า', '入') },
                   { key: 'date', label: t('Date', 'วันที่', '日期') }, { key: 'bank', label: t('Account', 'บัญชี', '帐户') },
                   { key: 'amount', label: t('Amount', 'ยอด', '总额'), money: true }, { key: 'bank_fee', label: t('Fee', 'ค่าธรรมเนียม', '手续费'), money: true },
-                  { key: 'x', label: '', render: (r) => !detail.data.checked && <button className="link danger" onClick={async () => { if (await run(() => api(`/exchange-items/${r.id}`, { method: 'DELETE' }))) refresh(); }}>×</button> },
+                  { key: 'x', label: '', render: (r) => !detail.data.checked && <button className="link danger" onClick={async () => { if (await run(() => api(`/exchange-items/${r.id}`, { method: 'DELETE' }))) refresh(); }}><X size={16} aria-hidden /><span className="sr-only">Remove</span></button> },
                 ]} />
               </Card>
             )}
@@ -274,6 +277,7 @@ export function InvoicePay() {
   const [k, setK] = useState<any>(null);
   const [p, setP] = useState<any>({ date: today(), amount: '', bank_fee: 0, service_fee: 0, bank_id: null });
   const { run, busy } = useAction();
+  const { ask } = useAsk();
   const load = async (c = code) => {
     const r: any = await run(() => api(`/packages/${encodeURIComponent(c.trim())}`), false);
     if (r) { setK(r); setP((x: any) => ({ ...x, amount: r.remaining })); }
@@ -282,7 +286,7 @@ export function InvoicePay() {
   }, []);
   const pay = async () => {
     const charge = Number(p.amount || 0) + Number(p.service_fee || 0);
-    if (!confirm(`${t('Pay', 'จ่าย', '付款')} ¥${money(p.amount)} · ${t('customer is charged', 'หักลูกค้า', '从客户扣除')} ¥${money(charge)}?`)) return;
+    if (!(await ask(`${t('Pay', 'จ่าย', '付款')} ¥${money(p.amount)} · ${t('customer is charged', 'หักลูกค้า', '从客户扣除')} ¥${money(charge)}?`, { ok: t('Pay', 'จ่าย', '付款') }))) return;
     if (await run(() => api(`/packages/${k.id}/payments`, { body: p }))) await load(k.code);
   };
   return (
@@ -337,9 +341,10 @@ export function InvoicePayments() {
   const { data, reload } = useApi<any[]>('/invoice-payments', q);
   const [sel, setSel] = useState<Set<any>>(new Set());
   const { run } = useAction();
+  const { ask } = useAsk();
   return (
     <Page title={t('Bill payments', 'ค้นหารายการจ่ายบิล', '查付款')}
-      actions={can.verify('invoice_payment') && <button disabled={!sel.size} onClick={async () => { if (await run(() => api('/invoice-payments/check', { body: { ids: [...sel] } }))) { setSel(new Set()); reload(); } }}>✓ {t('Check selected', 'ตรวจแล้ว', '校验')} ({sel.size})</button>}>
+      actions={can.verify('invoice_payment') && <button disabled={!sel.size} onClick={async () => { if (await run(() => api('/invoice-payments/check', { body: { ids: [...sel] } }))) { setSel(new Set()); reload(); } }}><Check size={16} aria-hidden /> {t('Check selected', 'ตรวจแล้ว', '校验')} ({sel.size})</button>}>
       <Card>
         <Grid cols={5}>
           <Field label={t('Customer', 'ลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => setQ({ ...q, customer_id: v })} /></Field>
@@ -353,8 +358,8 @@ export function InvoicePayments() {
         { key: 'customer_code', label: 'CODE' }, { key: 'bank', label: t('Account', 'บัญชี', '帐户') },
         { key: 'amount', label: '¥', money: true, sum: true }, { key: 'bank_fee', label: t('Bank fee', 'ค่าธรรมเนียม', '手续费'), money: true, sum: true },
         { key: 'service_fee', label: t('Service', 'ค่าบริการ', '服务费'), money: true, sum: true }, { key: 'payment_ref', label: 'Ref' },
-        { key: 'checked', label: t('Checked', 'ตรวจ', '校验'), render: (r) => r.checked ? <Badge tone="good">✓ {r.checked_by}</Badge> : <Badge tone="warn">—</Badge> },
-        { key: 'x', label: '', render: (r) => !r.checked && <button className="link danger" onClick={async () => { if (confirm('?') && await run(() => api(`/invoice-payments/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button> },
+        { key: 'checked', label: t('Checked', 'ตรวจ', '校验'), render: (r) => r.checked ? <Badge tone="good"><Check size={12} aria-hidden /> {r.checked_by}</Badge> : <Badge tone="warn">—</Badge> },
+        { key: 'x', label: '', render: (r) => !r.checked && <button className="link danger" onClick={async () => { if (await ask(t('Delete this item?', 'ต้องการลบรายการนี้?', '你确定要删除吗?'), { danger: true }) && await run(() => api(`/invoice-payments/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button> },
       ]} />
     </Page>
   );

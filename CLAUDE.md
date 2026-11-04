@@ -37,7 +37,8 @@ server/routes/sales.ts      customers, balances, orders, supplier bills (package
 server/routes/logistics.ts  packing, import, shipments load/unload, shipping summary, charges search
 server/routes/finance.ts    payment notices + checking, customer deposit/withdraw, bank statements/import, exchange, unpaid
 src/lib.tsx            api(), useApi(), i18n (useT), app context (user, lookups), formatters
-src/ui.tsx             Page/Card/Field/Grid/Table/Modal/Tabs/Combo pickers/PrintModal/Barcode/toasts
+src/nav.tsx            app shell: collapsible sidebar, top bar, Ctrl+K "go to" search, recent screens, icon per menu key
+src/ui.tsx             Page/Card/Field/Grid/Table/Modal/Tabs/Combo pickers/PrintModal/Barcode/toasts/Bi/useAsk
 src/pages/Crud.tsx     CrudPage: config-driven list + modal form for /api/r/* resources
 src/pages/*.tsx        one file per area (Orders, Packages, Packing, Shipments, Customers, Payments, Bank, Accounting, Admin)
 scripts/flow.ts        full business flow through the API with assertions (used by test + seed)
@@ -76,6 +77,14 @@ scripts/flow.ts        full business flow through the API with assertions (used 
 - Shipment rounds have a `status` (steps in `shared/statuses.ts`) with history in `shipment_status_log` (`POST /api/shipments/:id/status`).
 - Dashboard figures and rows link to the related screen (no separate quick-menu card).
 - Customer screen opens read-only (Edit button); shows THB, CNY and unpaid shipping (unpaid `shipment_summaries`) separately.
+
+## UI conventions (2026-11 redesign, see DESIGN.md)
+- Icons: `lucide-react` only (no emoji / unicode glyphs as icons). Icon-only buttons need an `sr-only` label or `aria-label`.
+- Never use `confirm()` / `prompt()` / `alert()`: `const { ask, askText } = useAsk()` then `await ask(msg, { danger: true })`; toasts for results.
+- `t()` in Thai+Chinese mode returns `th + U+2002 + zh + U+2060`. `<Bi>` (used automatically by Page/Card/Field/Table headers/Tabs) shows the Chinese half quieter. Don't `split(' ')` labels; use `BI_SEP`.
+- New screen: also give its menu key an icon in `ITEM_ICON` (src/nav.tsx). Detail pages pass `back="/list-path"` to `<Page>`.
+- A menu item with `navAs: '<key>'` keeps its own permission but has no sidebar entry; it lights up the `<key>` screen instead.
+  Orders: `/orders` (`OrdersHub`) holds the order list and supplier bills as tabs with one search box; `/packages` and `/lookup` redirect there.
 
 ## Conventions
 - All route handlers are synchronous (node:sqlite is sync) and throw `HttpError(status, message)`; messages are bilingual where the user sees them.

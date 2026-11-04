@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useLang, useT, pick, cbm, money } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, StylePick, Badge, Modal, PrintModal, Barcode, Tabs, useAction } from '../ui';
+import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, StylePick, Badge, Modal, PrintModal, Barcode, Tabs, useAction, useAsk, useToast, Bi } from '../ui';
+import { Printer, ReceiptText, Plus, X, ChevronRight, ChevronLeft } from 'lucide-react';
 
 const orderLabel = (r: { order_no?: string | null; order_id?: number }) => r.order_no || `#${r.order_id}`;
 const cbmText = (p: any) => cbm({ cubic1: Number(p.cubic1), cubic2: Number(p.cubic2), cubic3: Number(p.cubic3) }).toFixed(4);
@@ -134,10 +135,18 @@ export function PackNew({ mode }: { mode: 'order' | 'nobill' }) {
   };
   const printSel = async (start: 'labels' | 'receipt') => setPrint({ packings: await Promise.all([...sel].map((id) => api(`/packing/${id}`))), start });
   const styleName = (id: number) => { const s = lookups.styles.find((x) => x.id === id); return s ? pick(s, lang) : id; };
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const canSave = !busy && !!h.customer_id;
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'F1') { e.preventDefault(); if (canSave && !document.body.classList.contains('modal-open')) void saveRef.current(); } };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [canSave]);
   const noMeasure = !Number(h.weight) || !(Number(h.cubic1) * Number(h.cubic2) * Number(h.cubic3));
   return (
     <Page title={mode === 'order' ? t('Pack & weigh', 'แพคของ + ชั่งน้ำหนัก', '打包+称重') : t('Receive without bill', 'รับของไม่มีบิล', '没有订单收货')}
-      actions={<button className="primary" disabled={busy || !h.customer_id} onClick={save}>F1 · {t('Save & print', 'บันทึก', '保存')}</button>}>
+      actions={<button className="primary" disabled={!canSave} onClick={save} title={t('Shortcut: F1', 'กด F1 เพื่อบันทึกได้', '快捷键 F1')}>{t('Save & print', 'บันทึก', '保存')} <kbd className="on-primary">F1</kbd></button>}>
       <Card>
         <Grid cols={4}>
           <Field label={t('Customer code', 'รหัสลูกค้า', '客户代码') + ' *'}><CustomerPick value={h.customer_id} onChange={(v) => setH({ ...h, customer_id: v })} placeholder={t('Customer code', 'รหัสลูกค้า', '客户代码')} autoFocus /></Field>
@@ -175,7 +184,7 @@ export function PackNew({ mode }: { mode: 'order' | 'nobill' }) {
               { key: 'product_id', label: t('Product', 'รหัสสินค้า', '款号') },
               { key: 'quantity', label: t('Qty', 'จำนวน', '数量'), width: 110, render: (r) => <input type="number" step="any" min={0} max={r.left} value={r.quantity} onChange={(e) => setItems(items.map((x) => x.order_item_id === r.order_item_id ? { ...x, quantity: e.target.value } : x))} /> },
               { key: 'left', label: t('of', 'จาก', '共'), align: 'right' },
-              { key: 'x', label: '', render: (r) => <button className="link danger" onClick={() => setItems(items.filter((x) => x.order_item_id !== r.order_item_id))}>×</button> },
+              { key: 'x', label: '', render: (r) => <button className="link danger" onClick={() => setItems(items.filter((x) => x.order_item_id !== r.order_item_id))}><X size={16} aria-hidden /><span className="sr-only">Remove</span></button> },
             ]} empty={t('Click a line on the left', 'คลิกรายการด้านซ้าย', '点击左边')} />
           </Card>
         </div>
@@ -184,17 +193,17 @@ export function PackNew({ mode }: { mode: 'order' | 'nobill' }) {
         <div className="row" style={{ marginBottom: 10 }}>
           <div style={{ minWidth: 260, flex: 1 }}><StylePick value={newStyle.style_id} onChange={(v) => setNewStyle({ ...newStyle, style_id: v })} /></div>
           <input type="number" style={{ width: 100 }} value={newStyle.quantity} onChange={(e) => setNewStyle({ ...newStyle, quantity: e.target.value })} />
-          <button onClick={addStyle}>+ {t('Add', 'เพิ่ม', '加')}</button>
+          <button onClick={addStyle}><Plus size={16} aria-hidden /> {t('Add', 'เพิ่ม', '加')}</button>
         </div>
         <Table rowKey="key" rows={styles} columns={[
           { key: 'style_id', label: t('Category', 'ประเภทสินค้า', '产品分类'), render: (r) => styleName(r.style_id) },
           { key: 'quantity', label: t('Qty', 'จำนวน', '数量'), align: 'right' },
-          { key: 'x', label: '', render: (r) => <button className="link danger" onClick={() => setStyles(styles.filter((s) => s.key !== r.key))}>×</button> },
+          { key: 'x', label: '', render: (r) => <button className="link danger" onClick={() => setStyles(styles.filter((s) => s.key !== r.key))}><X size={16} aria-hidden /><span className="sr-only">Remove</span></button> },
         ]} />
       </Card>
       <Card title={t('Just packed', 'รายการที่เพิ่งแพ็ค', '刚刚打包')} actions={<>
-        <button disabled={!sel.size} onClick={() => printSel('labels')}>🖨 {t('Labels', 'ปริ้นป้าย', '打印标签')} ({sel.size})</button>
-        <button disabled={!sel.size} onClick={() => printSel('receipt')}>🧾 {t('Receipt', 'ปริ้นใบรับของ', '收货单')} ({sel.size})</button></>}>
+        <button disabled={!sel.size} onClick={() => printSel('labels')}><Printer size={16} aria-hidden /> {t('Labels', 'ปริ้นป้าย', '打印标签')} ({sel.size})</button>
+        <button disabled={!sel.size} onClick={() => printSel('receipt')}><ReceiptText size={16} aria-hidden /> {t('Receipt', 'ปริ้นใบรับของ', '收货单')} ({sel.size})</button></>}>
         <Table rows={recent.data} selectable={() => true} selected={sel} onSelect={setSel} columns={[
           { key: 'packing_code', label: t('Box', 'เลขกล่อง', '包号') },
           { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
@@ -204,7 +213,7 @@ export function PackNew({ mode }: { mode: 'order' | 'nobill' }) {
           { key: 'cbm', label: t('CBM', 'คิว', '立方'), align: 'right', render: (r) => cbmText(r) },
           { key: 'shipment_code', label: t('Round', 'รอบ', '发货单') },
           { key: 'created_at', label: t('Time', 'เวลา', '时间') },
-          { key: 'p', label: '', render: (r) => <button className="link" onClick={async () => setPrint({ packings: [await api(`/packing/${r.id}`)], start: 'labels' })}>🖨</button> },
+          { key: 'p', label: '', render: (r) => <button className="link" onClick={async () => setPrint({ packings: [await api(`/packing/${r.id}`)], start: 'labels' })}><Printer size={16} aria-hidden /><span className="sr-only">Print</span></button> },
         ]} />
       </Card>
       <PackPrint packings={print?.packings || null} start={print?.start} onClose={() => setPrint(null)} />
@@ -242,7 +251,7 @@ export function PackWeigh() {
   return (
     <Page title={t('Weigh boxes later', 'ชั่งน้ำหนัก / วัดขนาดทีหลัง', '补录重量尺寸')}
       actions={<>
-        <button disabled={!sel.size} onClick={printSel}>🖨 {t('Print labels', 'ปริ้นป้าย', '打印')} ({sel.size})</button>
+        <button disabled={!sel.size} onClick={printSel}><Printer size={16} aria-hidden /> {t('Print labels', 'ปริ้นป้าย', '打印')} ({sel.size})</button>
         <button className="primary" disabled={!dirty || busy} onClick={save}>{t('Save', 'บันทึก', '保存')} ({dirty})</button></>}>
       <Card>
         <Grid cols={4}>
@@ -279,6 +288,7 @@ function PackingEditModal({ id, onClose, onSaved }: { id: number; onClose: () =>
   const { lang } = useLang();
   const { data: p, reload, setData } = useApi<any>(`/packing/${id}`);
   const { run, busy } = useAction();
+  const { ask } = useAsk();
   const [ns, setNs] = useState<any>({ style_id: null, quantity: 1 });
   if (!p) return null;
   const save = async () => { if (await run(() => api(`/packing/${id}`, { method: 'PUT', body: p }))) { onSaved(); onClose(); } };
@@ -298,7 +308,7 @@ function PackingEditModal({ id, onClose, onSaved }: { id: number; onClose: () =>
         { key: 'order_no', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (r) => orderLabel(r) },
         { key: 'product_id', label: t('Product', 'รหัสสินค้า', '款号') },
         { key: 'quantity', label: t('Qty', 'จำนวน', '数量'), width: 100, render: (r) => <input type="number" defaultValue={r.quantity} onBlur={async (e) => { if (Number(e.target.value) !== r.quantity && await run(() => api(`/packing-items/${r.id}`, { method: 'PUT', body: { quantity: e.target.value } }))) reload(); }} /> },
-        { key: 'x', label: '', render: (r) => <button className="link danger" onClick={async () => { if (confirm('?') && await run(() => api(`/packing-items/${r.id}`, { method: 'DELETE' }))) reload(); }}>×</button> },
+        { key: 'x', label: '', render: (r) => <button className="link danger" onClick={async () => { if (await ask(t('Delete this item?', 'ต้องการลบรายการนี้?', '你确定要删除吗?'), { danger: true }) && await run(() => api(`/packing-items/${r.id}`, { method: 'DELETE' }))) reload(); }}><X size={16} aria-hidden /><span className="sr-only">Remove</span></button> },
       ]} />
       <h3>{t('Categories (no bill)', 'ประเภทสินค้า', '产品分类')}</h3>
       <div className="row" style={{ marginBottom: 8 }}>
@@ -309,7 +319,7 @@ function PackingEditModal({ id, onClose, onSaved }: { id: number; onClose: () =>
       <Table rows={p.styles} columns={[
         { key: 's', label: t('Category', 'ประเภท', '分类'), render: (r) => pick({ th: r.style_th, zh: r.style_zh, en: r.style_en }, lang) },
         { key: 'quantity', label: t('Qty', 'จำนวน', '数量'), width: 100, render: (r) => <input type="number" defaultValue={r.quantity} onBlur={async (e) => { if (Number(e.target.value) !== r.quantity && await run(() => api(`/packing-styles/${r.id}`, { method: 'PUT', body: { style_id: r.style_id, quantity: e.target.value } }))) reload(); }} /> },
-        { key: 'x', label: '', render: (r) => <button className="link danger" onClick={async () => { if (await run(() => api(`/packing-styles/${r.id}`, { method: 'DELETE' }))) reload(); }}>×</button> },
+        { key: 'x', label: '', render: (r) => <button className="link danger" onClick={async () => { if (await run(() => api(`/packing-styles/${r.id}`, { method: 'DELETE' }))) reload(); }}><X size={16} aria-hidden /><span className="sr-only">Remove</span></button> },
       ]} />
     </Modal>
   );
@@ -326,6 +336,7 @@ export function PackingSearch() {
   const [sel, setSel] = useState<Set<any>>(new Set());
   const [print, setPrint] = useState<any[] | null>(null);
   const { run } = useAction();
+  const { ask } = useAsk();
   useEffect(() => setSel(new Set()), [q.customer_id]);
   const printSel = async () => setPrint(await Promise.all([...sel].map((id) => api(`/packing/${id}`))));
   const statusOpt = (
@@ -334,8 +345,8 @@ export function PackingSearch() {
     </select>
   );
   return (
-    <Page title={detailView ? <><button className="link" onClick={() => setQ({ ...q, customer_id: null })}>← {t('All customers', 'ภาพรวมทุกลูกค้า', '所有客户')}</button> {t('Packing list', 'PackingList', 'PackingList')}</> : t('Search packing list', 'ค้นหา PackingList', '搜索 PackingList')}
-      actions={detailView && <button disabled={!sel.size} onClick={printSel}>🖨 {t('Print labels', 'ปริ้นป้าย', '打印')} ({sel.size})</button>}>
+    <Page title={detailView ? <><button className="link" onClick={() => setQ({ ...q, customer_id: null })}><ChevronLeft size={16} aria-hidden /> {t('All customers', 'ภาพรวมทุกลูกค้า', '所有客户')}</button> {t('Packing list', 'PackingList', 'PackingList')}</> : t('Search packing list', 'ค้นหา PackingList', '搜索 PackingList')}
+      actions={detailView && <button disabled={!sel.size} onClick={printSel}><Printer size={16} aria-hidden /> {t('Print labels', 'ปริ้นป้าย', '打印')} ({sel.size})</button>}>
       <Card>
         <Grid cols={6}>
           <Field label={t('Customer code', 'รหัสลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => setQ({ ...q, customer_id: v })} /></Field>
@@ -356,7 +367,7 @@ export function PackingSearch() {
           { key: 'unweighed', label: t('Not weighed', 'ยังไม่ชั่ง', '未称重'), align: 'right', render: (r) => r.unweighed ? <Badge tone="warn">{r.unweighed}</Badge> : '' },
           { key: 'order_nos', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (r) => <span className="clip">{r.order_nos || ''}</span> },
           { key: 'last_packed', label: t('Last packed', 'แพคล่าสุด', '最后打包'), render: (r) => r.last_packed?.slice(0, 16) },
-          { key: 'go', label: '', render: () => <span className="muted">{t('Details', 'ดูรายละเอียด', '详情')} →</span> },
+          { key: 'go', label: '', render: () => <span className="muted"><Bi>{t('Details', 'ดูรายละเอียด', '详情')}</Bi> <ChevronRight size={14} aria-hidden style={{ verticalAlign: -2 }} /></span> },
         ]} />
       )}
       {detailView && (
@@ -372,8 +383,8 @@ export function PackingSearch() {
           { key: 'tracking_no', label: t('Tracking', 'เลขแทรค', '单号') },
           { key: 'st', label: t('Status', 'สถานะ', '状态'), render: (r) => r.off_china_date ? <Badge tone="good">{t('On container', 'ขึ้นตู้แล้ว', '已发')} {r.off_china_date}</Badge> : <Badge>{t('Not shipped', 'ยังไม่ส่ง', '未发货')}</Badge> },
           { key: 'x', label: '', render: (r) => <span onClick={(e) => e.stopPropagation()} className="row">
-            <button className="link" onClick={async () => setPrint([await api(`/packing/${r.id}`)])}>🖨</button>
-            {!r.off_china_date && <button className="link danger" onClick={async () => { if (confirm(t('Delete this box?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?')) && await run(() => api(`/packing/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button>}
+            <button className="link" onClick={async () => setPrint([await api(`/packing/${r.id}`)])}><Printer size={16} aria-hidden /><span className="sr-only">Print</span></button>
+            {!r.off_china_date && <button className="link danger" onClick={async () => { if (await ask(t('Delete this box?', 'ต้องการลบกล่องนี้?', '你确定要删除吗?'), { danger: true }) && await run(() => api(`/packing/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button>}
           </span> },
         ]} />
       )}
@@ -386,6 +397,7 @@ export function PackingSearch() {
 /** BuckPackingcs — paste rows from a forwarder's file and create / update boxes in bulk. */
 export function PackingImport() {
   const t = useT();
+  const toast = useToast();
   const [text, setText] = useState('');
   const [shipment, setShipment] = useState<any>(null);
   const [style, setStyle] = useState<any>(null);
@@ -395,7 +407,7 @@ export function PackingImport() {
   const preview = async () => { const r: any = await run(() => api('/packing/import', { body: { text } }), false); if (r) setRows(r.rows); };
   const commit = async () => {
     const r: any = await run(() => api('/packing/import', { body: { text, commit: true, shipment_id: shipment, style_id: style } }));
-    if (r) { setRows(null); setText(''); alert(`${r.created.length} ${t('boxes saved', 'กระสอบบันทึกแล้ว', '包已保存')}`); }
+    if (r) { setRows(null); setText(''); toast(`${r.created.length} ${t('boxes saved', 'กระสอบบันทึกแล้ว', '包已保存')}`); }
   };
   return (
     <Page title={t('Pack from file', 'แพคจากไฟล์', '从文件打包')}>

@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { api, useApi, useApp, useLang, useT, money, pick, today, monthStart } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, StylePick, DateRange, Badge, useAction } from '../ui';
+import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, monthStart } from '../lib';
+import { Page, Card, Grid, Field, Table, Tabs, CustomerPick, StylePick, DateRange, Badge, Modal, Bi, useAction, useAsk } from '../ui';
+import { BillList } from './Packages';
+import { Check, Pencil, Plus, Search } from 'lucide-react';
 
 const emptyLine = () => ({ key: Math.random(), product_id: '', style_id: null as any, quantity: 1, unit_price: 0 });
 
@@ -30,7 +32,7 @@ export function OrderEdit() {
     else nav(`/orders?id=${id || r.id}`);
   };
   return (
-    <Page title={id ? `${t('Order', 'ออเดอร์', '订单')} ${o.order_no || '#' + id}` : t('New order', 'เพิ่มออเดอร์ใหม่', '新订单')}
+    <Page back={id ? '/orders' : undefined} title={id ? `${t('Order', 'ออเดอร์', '订单')} ${o.order_no || '#' + id}` : t('New order', 'เพิ่มออเดอร์ใหม่', '新订单')}
       actions={<>{!id && <button disabled={busy} onClick={() => save(true)}>{t('Save & new', 'บันทึกแล้วเพิ่มต่อ', '保存并新增')}</button>}
         <button className="primary" disabled={busy} onClick={() => save(false)}>{t('Save', 'บันทึก', '保存')}</button></>}>
       <Card>
@@ -49,7 +51,7 @@ export function OrderEdit() {
           <Field label={t('Deposit (CNY)', 'มัดจำ', '定金')}><input type="number" step="any" value={o.deposit ?? 0} onChange={(e) => setO({ ...o, deposit: e.target.value })} /></Field>
         </Grid>
       </Card>
-      <Card title={t('Lines', 'รายการสินค้า', '产品')} actions={<button onClick={() => setItems([...items, emptyLine()])}>+ {t('Add line', 'เพิ่มรายการ', '新增项目')}</button>}>
+      <Card title={t('Lines', 'รายการสินค้า', '产品')} actions={<button onClick={() => setItems([...items, emptyLine()])}><Plus size={16} aria-hidden /> {t('Add line', 'เพิ่มรายการ', '新增项目')}</button>}>
         <Table rowKey="key" rows={items} columns={[
           { key: 'n', label: '#', render: (_r, i) => i + 1, width: 40 },
           { key: 'product_id', label: t('Product id / link', 'รหัสสินค้า', '款号'), render: (r) => <input value={r.product_id || ''} onChange={(e) => upd(r.key, { product_id: e.target.value })} /> },
@@ -68,32 +70,109 @@ export function OrderEdit() {
   );
 }
 
-/** SearchOrderForm */
-export function OrderSearch() {
+/** Orders + supplier bills on one screen (old SearchOrderForm, SearchInvoiceForm and SearchCallForm). Order list first. */
+export function OrdersHub() {
+  const t = useT();
+  const can = useCan();
+  const [sp, setSp] = useSearchParams();
+  const showOrders = can.menu('order.search');
+  const showBills = can.menu('package.search');
+  const tab = sp.get('tab') === 'bills' && showBills ? 'bills' : showOrders ? 'orders' : 'bills';
+  const search = sp.get('q') || '';
+  const setTab = (k: string) => setSp((p) => { const n = new URLSearchParams(p); if (k === 'bills') n.set('tab', 'bills'); else n.delete('tab'); n.delete('id'); return n; }, { replace: true });
+  const setSearch = (v: string) => setSp((p) => { const n = new URLSearchParams(p); if (v) n.set('q', v); else n.delete('q'); n.delete('id'); return n; }, { replace: true });
+  return (
+    <Page title={t('Orders & supplier bills', 'ออเดอร์ + บิลโอน', '订单 + 划款单')}
+      actions={<>
+        {can.menu('package.new') && <Link to="/packages/new"><button className={tab === 'bills' ? 'primary' : ''}><Plus size={16} aria-hidden /> {t('New bill', 'เปิดบิลโอนใหม่', '开划款单')}</button></Link>}
+        {can.menu('order.new') && <Link to="/orders/new"><button className={tab === 'orders' ? 'primary' : ''}><Plus size={16} aria-hidden /> {t('New order', 'เพิ่มออเดอร์', '新订单')}</button></Link>}
+      </>}>
+      {showOrders && showBills && <Tabs value={tab} onChange={setTab} tabs={[
+        { key: 'orders', label: t('Orders', 'ออเดอร์', '订单') },
+        { key: 'bills', label: t('Supplier bills', 'บิลโอนเงิน', '划款单') },
+      ]} />}
+      {tab === 'orders'
+        ? <OrderList search={search} onSearch={setSearch} />
+        : <BillList search={search} onSearch={setSearch} />}
+    </Page>
+  );
+}
+
+/** One search box for order no., bill code, shop or product id. While it has text, all dates are searched. */
+export function SearchBox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const t = useT();
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  useEffect(() => { const h = setTimeout(() => { if (text.trim() !== value) onChange(text.trim()); }, 350); return () => clearTimeout(h); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
+  return (
+    <Field label={t('Search', 'ค้นหา', '搜索')} hint={text ? t('Searching all dates', 'ค้นหาทุกช่วงวันที่', '搜索全部日期') : undefined}>
+      <div className="search-input">
+        <Search size={16} aria-hidden />
+        <input autoFocus type="search" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') onChange(text.trim()); }}
+          placeholder={t('Order no., bill no., shop or product id', 'เลขออเดอร์ / เลขบิล / ร้านค้า / รหัสสินค้า', '单号 / 划款单 / 卖家 / 款号')} />
+      </div>
+    </Field>
+  );
+}
+
+/** Order header shown in the order dialog: customer (large), shop, dates, payment and money. */
+function OrderInfo({ o }: { o: any }) {
+  const t = useT();
+  const name = [o.firstname, o.lastname].filter(Boolean).join(' ') + (o.nickname ? ` (${o.nickname})` : '');
+  const total = o.items.reduce((s: number, i: any) => s + i.quantity * i.unit_price, 0);
+  const qty = o.items.reduce((s: number, i: any) => s + Number(i.quantity || 0), 0);
+  const left = o.items.reduce((s: number, i: any) => s + Math.max(0, i.quantity - Math.max(i.received_qty, i.packed_qty)), 0);
+  const rows: [string, ReactNode][] = [
+    [t('Order no.', 'เลขออเดอร์', '订单号'), <b>{o.order_no || `#${o.id}`}</b>],
+    [t('Order date', 'วันที่สั่ง', '下单日期'), o.order_date],
+    [t('Shop', 'ร้านค้า', '卖家'), o.supplier_name || '-'],
+    [t('Shop phone', 'เบอร์ร้าน', '卖家电话'), o.supplier_phone || '-'],
+    [t('Payment', 'การจ่าย', '付款'), o.payment_type === 'paid' ? t('Already paid', 'จ่ายแล้ว', '已付') : 'Credit'],
+    [t('Customer phone', 'เบอร์ลูกค้า', '客户电话'), o.customer_phone || '-'],
+    [t('Created by', 'ผู้บันทึก', '录入人'), o.created_by ? `${o.created_by}${o.created_at ? ' · ' + String(o.created_at).slice(0, 16) : ''}` : '-'],
+  ];
+  return (
+    <div className="order-info">
+      <div className="order-cust"><span className="order-cust-code">{o.customer_code}</span>{name.trim() && <span className="order-cust-name">{name}</span>}</div>
+      <dl className="order-facts">{rows.map(([k, v]) => <div key={k}><dt><Bi>{k}</Bi></dt><dd>{v}</dd></div>)}</dl>
+      <div className="order-money">
+        <div><span className="muted"><Bi>{t('Total ¥', 'ยอดรวม ¥', '总价 ¥')}</Bi></span><b>{money(total)}</b></div>
+        <div><span className="muted"><Bi>{t('Deposit ¥', 'มัดจำ ¥', '定金 ¥')}</Bi></span><b>{money(o.deposit || 0)}</b></div>
+        <div><span className="muted"><Bi>{t('Qty', 'จำนวน', '数量')}</Bi></span><b>{qty}</b></div>
+        <div><span className="muted"><Bi>{t('Not received yet', 'ยังไม่ได้รับ', '未收')}</Bi></span><b className={left ? 'neg' : ''}>{left}</b></div>
+      </div>
+    </div>
+  );
+}
+
+function OrderList({ search, onSearch }: { search: string; onSearch: (v: string) => void }) {
   const t = useT();
   const [sp] = useSearchParams();
   const nav = useNavigate();
   const { lang } = useLang();
-  const [q, setQ] = useState<any>({ id: sp.get('id') || '', from: sp.get('id') ? '' : monthStart(), to: '' });
-  const { data, reload } = useApi<any[]>('/orders', q);
+  const can = useCan();
+  const [q, setQ] = useState<any>({ id: sp.get('id') || '', from: monthStart(), to: '' });
+  const { data, reload } = useApi<any[]>('/orders', { ...q, search, from: search || q.id ? '' : q.from, to: search || q.id ? '' : q.to });
   const [open, setOpen] = useState<number | null>(sp.get('id') ? Number(sp.get('id')) : null);
   const detail = useApi<any>(open ? `/orders/${open}` : null);
+  const closeDetail = useCallback(() => setOpen(null), []);
   const { run } = useAction();
+  const { ask } = useAsk();
   const del = async (id: number) => {
-    if (!confirm(t('Delete this order?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'))) return;
+    if (!(await ask(t('Delete this order?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'), { danger: true }))) return;
     if (await run(() => api(`/orders/${id}`, { method: 'DELETE' }), t('Deleted', 'ลบแล้ว', '已删除'))) { setOpen(null); reload(); }
   };
   return (
-    <Page title={t('Search orders', 'ค้นหาออเดอร์', '搜索订单')} actions={<Link to="/orders/new"><button className="primary">+ {t('New order', 'เพิ่มออเดอร์', '新订单')}</button></Link>}>
+    <>
       <Card>
-        <Grid cols={5}>
+        <Grid cols={4}>
+          <SearchBox value={search} onChange={onSearch} />
           <Field label={t('Customer', 'ลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => setQ({ ...q, customer_id: v })} /></Field>
-          <Field label={t('Order no.', 'เลขออเดอร์', '单号')}><input value={q.id} onChange={(e) => setQ({ ...q, id: e.target.value })} /></Field>
-          <Field label={t('Shop or product id', 'ร้านค้า / รหัสสินค้า', '卖家 / 款号')}><input value={q.q || ''} onChange={(e) => setQ({ ...q, q: e.target.value })} /></Field>
-          <DateRange from={q.from} to={q.to} onChange={(from, to) => setQ({ ...q, from, to })} />
+          <DateRange from={search || q.id ? '' : q.from} to={search || q.id ? '' : q.to} onChange={(from, to) => setQ({ ...q, id: '', from, to })} />
         </Grid>
       </Card>
-      <Table rows={data} onRow={(r) => setOpen(open === r.id ? null : r.id)} rowClass={(r) => (r.id === open ? 'on' : '')} columns={[
+      <Table rows={data} onRow={(r) => setOpen(r.id)} rowClass={(r) => (r.id === open ? 'on' : '')} columns={[
         { key: 'order_no', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (r) => <b>{r.order_no || `#${r.id}`}</b> },
         { key: 'order_date', label: t('Date', 'วันที่', '日期') },
         { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
@@ -106,12 +185,19 @@ export function OrderSearch() {
         { key: 'deposit', label: t('Deposit', 'มัดจำ', '定金'), money: true },
         { key: 'payment_type', label: t('Payment', 'การจ่าย', '付款') },
         { key: 'a', label: '', render: (r) => <span className="row" onClick={(e) => e.stopPropagation()}>
+          {can.menu('package.new') && r.received_qty < r.qty && <button className="link" onClick={() => nav(`/packages/new?order_id=${r.id}`)}>{t('Open bill', 'เปิดบิลโอน', '开划款单')}</button>}
           {r.qty - Math.max(r.received_qty, r.packed_qty) > 0 && <button className="link" onClick={() => nav(`/packing/new?order=${encodeURIComponent(r.order_no || r.id)}`)}>{t('Receive more', 'รับของเพิ่ม', '继续收货')}</button>}
           <button className="link" onClick={() => nav(`/orders/${r.id}`)}>{t('Edit', 'แก้ไข', '修改')}</button>
           <button className="link danger" onClick={() => del(r.id)}>{t('Delete', 'ลบ', '删除')}</button></span> },
       ]} />
       {open && detail.data && (
-        <Card title={`${t('Order', 'ออเดอร์', '订单')} ${detail.data.order_no || '#' + open} · ${detail.data.customer_code}`} className="mt">
+        <Modal open wide onClose={closeDetail} title={`${t('Order', 'ออเดอร์', '订单')} ${detail.data.order_no || '#' + open} · ${detail.data.customer_code}`}
+          footer={<>
+            {can.menu('package.new') && !detail.data.items.some((i: any) => i.quantity > i.received_qty) && <Link to={`/packages/new?customer_id=${detail.data.customer_id}`}><button><Plus size={16} aria-hidden /> {t('New bill for this customer', 'เปิดบิลโอนให้ลูกค้านี้', '为此客户开划款单')}</button></Link>}
+            <Link to={`/orders/${open}`}><button><Pencil size={16} aria-hidden /> {t('Edit order', 'แก้ไขออเดอร์', '修改订单')}</button></Link>
+            {can.menu('package.new') && detail.data.items.some((i: any) => i.quantity > i.received_qty) && <Link to={`/packages/new?order_id=${open}`}><button className="primary"><Plus size={16} aria-hidden /> {t('New bill from this order', 'เปิดบิลโอนจากออเดอร์นี้', '按此订单开划款单')}</button></Link>}
+          </>}>
+          <OrderInfo o={detail.data} />
           <Table rows={detail.data.items} columns={[
             { key: 'product_id', label: t('Product id', 'รหัสสินค้า', '款号') },
             { key: 'style', label: t('Category', 'ประเภท', '分类'), render: (r) => pick({ th: r.style_th, zh: r.style_zh, en: r.style_en }, lang) },
@@ -120,60 +206,10 @@ export function OrderSearch() {
             { key: 't', label: t('Total', 'รวม', '总价'), money: true, render: (r) => money(r.quantity * r.unit_price) },
             { key: 'received_qty', label: t('Billed', 'เปิดบิลแล้ว', '已开单'), align: 'right' },
             { key: 'packed_qty', label: t('Packed', 'แพคแล้ว', '打包了'), align: 'right' },
-            { key: 'left', label: t('Not received yet', 'ยังไม่ได้รับ', '未收'), align: 'right', render: (r) => { const left = r.quantity - Math.max(r.received_qty, r.packed_qty); return left > 0 ? <b className="neg">{left}</b> : <Badge tone="good">✓</Badge>; } },
+            { key: 'left', label: t('Not received yet', 'ยังไม่ได้รับ', '未收'), align: 'right', render: (r) => { const left = r.quantity - Math.max(r.received_qty, r.packed_qty); return left > 0 ? <b className="neg">{left}</b> : <Badge tone="good"><Check size={12} aria-label="done" /></Badge>; } },
           ]} />
-        </Card>
+        </Modal>
       )}
-    </Page>
-  );
-}
-
-/** SearchCallForm — find everything about an order id, bill code or product id. */
-export function Lookup() {
-  const t = useT();
-  const { lang } = useLang();
-  const [q, setQ] = useState('');
-  const [query, setQuery] = useState('');
-  const { data } = useApi<any>(query ? '/lookup' : null, { q: query });
-  return (
-    <Page title={t('Lookup order / bill', 'ค้นหารายละเอียด', '查找账单')}>
-      <Card>
-        <form className="row" onSubmit={(e) => { e.preventDefault(); setQuery(q.trim()); }}>
-          <input style={{ maxWidth: 420 }} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Order no., bill code or product id', 'เลขออเดอร์ / เลขบิล / รหัสสินค้า', '单号 / 划款单 / 款号')} />
-          <button className="primary">{t('Search', 'ค้นหา', '搜索')}</button>
-        </form>
-      </Card>
-      {data && (<>
-        <Card title={t('Order lines', 'รายการสั่งซื้อ', '订单')}>
-          <Table rows={data.items} columns={[
-            { key: 'order_id', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (r) => <Link to={`/orders?id=${r.order_id}`}>{r.order_no || `#${r.order_id}`}</Link> },
-            { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
-            { key: 'supplier_name', label: t('Shop', 'ร้านค้า', '卖家') },
-            { key: 'product_id', label: t('Product id', 'รหัสสินค้า', '款号') },
-            { key: 'style', label: t('Category', 'ประเภท', '分类'), render: (r) => pick({ th: r.style_th, zh: r.style_zh, en: r.style_en }, lang) },
-            { key: 'quantity', label: t('Qty', 'จำนวน', '数量'), align: 'right' },
-            { key: 'unit_price', label: t('Price ¥', 'ราคา', '单价'), money: true },
-            { key: 'received_qty', label: t('Received', 'รับแล้ว', '收到'), align: 'right' },
-            { key: 'packed_qty', label: t('Packed', 'แพคแล้ว', '打包了'), align: 'right' },
-          ]} />
-        </Card>
-        <Card title={t('Supplier bills', 'บิลโอนเงิน', '划款单')}>
-          <Table rows={data.packages} columns={[
-            { key: 'code', label: t('Bill', 'บิล', '划款单'), render: (r) => <Link to={`/packages/${r.id}`}>{r.code}</Link> },
-            { key: 'date', label: t('Date', 'วันที่', '日期') },
-            { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
-            { key: 'due', label: t('To pay ¥', 'ยอดที่ต้องจ่าย', '应付'), money: true },
-            { key: 'paid', label: t('Paid ¥', 'จ่ายแล้ว', '已付'), money: true },
-            { key: 'remaining', label: t('Left ¥', 'คงเหลือ', '余额'), money: true },
-          ]} />
-        </Card>
-        <Card title={t('Deductions / adjustments', 'รายการหัก', '其他扣除')}>
-          <Table rows={data.statements} columns={[
-            { key: 'package_code', label: t('Bill', 'บิล', '划款单') }, { key: 'product_id', label: t('Product', 'สินค้า', '产品') },
-            { key: 'type', label: t('Type', 'ประเภท', '类别') }, { key: 'amount', label: t('Amount ¥', 'ยอด', '总额'), money: true }, { key: 'description', label: t('Note', 'หมายเหตุ', '备注') },
-          ]} />
-        </Card>
-      </>)}
-    </Page>
+    </>
   );
 }

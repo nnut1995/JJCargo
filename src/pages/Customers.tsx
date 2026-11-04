@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useT, money, today } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, Tabs, Combo, useAction } from '../ui';
+import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, Tabs, Combo, useAction, useAsk } from '../ui';
+import { Plus, Pencil } from 'lucide-react';
 
 /** CustomerInfo — list + search. */
 export function Customers() {
@@ -10,7 +11,7 @@ export function Customers() {
   const [q, setQ] = useState({ q: '', by: 'all' });
   const { data } = useApi<any[]>('/customers', q);
   return (
-    <Page title={t('Customers', 'ข้อมูลลูกค้า', '客户数据')} actions={<Link to="/customers/new"><button className="primary">+ {t('New customer', 'เพิ่มลูกค้า', '新增客户')}</button></Link>}>
+    <Page title={t('Customers', 'ข้อมูลลูกค้า', '客户数据')} actions={<Link to="/customers/new"><button className="primary"><Plus size={16} aria-hidden /> {t('New customer', 'เพิ่มลูกค้า', '新增客户')}</button></Link>}>
       <Card>
         <Grid cols={3}>
           <Field label={t('Search', 'คำค้นหา', '搜索字词')}><input autoFocus value={q.q} onChange={(e) => setQ({ ...q, q: e.target.value })} /></Field>
@@ -51,6 +52,7 @@ export function CustomerEdit() {
   const nav = useNavigate();
   const { lookups, reloadLookups } = useApp();
   const { run, busy } = useAction();
+  const { ask } = useAsk();
   const [c, setC] = useState<any>({ calc_type: 'mix' });
   const [tab, setTab] = useState('info');
   const [addr, setAddr] = useState<any>(null);
@@ -67,15 +69,15 @@ export function CustomerEdit() {
   };
   const cancel = () => { setEditing(false); void load(); };
   const del = async () => {
-    if (!confirm(t('Delete this customer?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'))) return;
+    if (!(await ask(t('Delete this customer?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'), { danger: true }))) return;
     if (await run(() => api(`/customers/${id}`, { method: 'DELETE' }))) { await reloadLookups(); nav('/customers'); }
   };
   const others = lookups.customers.filter((x) => String(x.id) !== String(id));
   return (
-    <Page title={id ? `${t('Customer', 'ลูกค้า', '客户')} ${c.code || ''}` : t('New customer', 'เพิ่มลูกค้า', '新增客户')}
+    <Page back={id ? '/customers' : undefined} title={id ? `${t('Customer', 'ลูกค้า', '客户')} ${c.code || ''}` : t('New customer', 'เพิ่มลูกค้า', '新增客户')}
       actions={editing
         ? <>{id && <button className="danger" onClick={del}>{t('Delete', 'ลบ', '删除')}</button>}{id && <button onClick={cancel}>{t('Cancel', 'ยกเลิก', '取消')}</button>}<button className="primary" disabled={busy} onClick={save}>{t('Save', 'บันทึก', '保存')}</button></>
-        : <button className="primary" onClick={() => setEditing(true)}>✎ {t('Edit', 'แก้ไข', '修改')}</button>}>
+        : <button className="primary" onClick={() => setEditing(true)}><Pencil size={16} aria-hidden /> {t('Edit', 'แก้ไข', '修改')}</button>}>
       {id && (
         <div className="stats">
           <div className={`stat ${c.balance_thb < 0 ? 'bad' : ''}`}><div className="stat-label">{t('THB balance', 'Balance เงินไทย', '平衡泰铢')}</div><div className="stat-value">{money(c.balance_thb)}</div></div>
@@ -124,7 +126,7 @@ export function CustomerEdit() {
         </fieldset>
       )}
       {tab === 'addr' && (
-        <Card title={t('Delivery addresses', 'ที่อยู่จัดส่ง', '收货地址')} actions={<button onClick={() => setAddr({ customer_id: Number(id), is_default: c.addresses?.length ? 0 : 1 })}>+ {t('Add', 'เพิ่ม', '新增')}</button>}>
+        <Card title={t('Delivery addresses', 'ที่อยู่จัดส่ง', '收货地址')} actions={<button onClick={() => setAddr({ customer_id: Number(id), is_default: c.addresses?.length ? 0 : 1 })}><Plus size={16} aria-hidden /> {t('Add', 'เพิ่ม', '新增')}</button>}>
           <Table rows={c.addresses} onRow={setAddr} columns={[
             { key: 'name', label: t('Receiver', 'ชื่อผู้รับ', '收件人') },
             { key: 'address', label: t('Address', 'ที่อยู่', '地址') },
@@ -168,6 +170,7 @@ export function Balances() {
   const { data, reload } = useApi<any>(`/balances/${currency}`, q);
   const [edit, setEdit] = useState<any>(null);
   const { run } = useAction();
+  const { ask } = useAsk();
   const cny = currency === 'CNY';
   const save = async () => {
     const body = { ...edit, income: edit.kind === 'in' ? edit.amount : 0, expense: edit.kind === 'out' ? edit.amount : 0 };
@@ -195,7 +198,7 @@ export function Balances() {
         { key: 'balance', label: t('Balance', 'คงเหลือ', '余额'), money: true, render: (r) => <span className={r.balance < 0 ? 'neg' : ''}>{money(r.balance)}</span> },
         { key: 'source', label: t('From', 'ที่มา', '来源'), render: (r) => <Badge tone={r.source === 'manual' ? 'neutral' : 'info'}>{r.source}</Badge> },
         { key: 'created_by', label: t('By', 'โดย', '人') },
-        { key: 'x', label: '', render: (r) => r.source === 'manual' && <button className="link danger" onClick={async (e) => { e.stopPropagation(); if (confirm('?') && await run(() => api(`/balances/${currency}/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button> },
+        { key: 'x', label: '', render: (r) => r.source === 'manual' && <button className="link danger" onClick={async (e) => { e.stopPropagation(); if (await ask(t('Delete this item?', 'ต้องการลบรายการนี้?', '你确定要删除吗?'), { danger: true }) && await run(() => api(`/balances/${currency}/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button> },
       ]} />
       {edit && (
         <Modal open title={edit.id ? t('Edit', 'แก้ไข', '修改') : cny ? t('Top up / deduct CNY', 'เติมเงินเข้า Balance เงินจีน', '人民币') : t('Top up / deduct THB', 'เติมเงินเข้า Balance เงินไทย', '泰铢')} onClose={() => setEdit(null)}
