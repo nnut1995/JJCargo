@@ -1,0 +1,179 @@
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { api, useApi, useApp, useLang, useT, money, pick, today, monthStart } from '../lib';
+import { Page, Card, Grid, Field, Table, CustomerPick, StylePick, DateRange, Badge, useAction } from '../ui';
+
+const emptyLine = () => ({ key: Math.random(), product_id: '', style_id: null as any, quantity: 1, unit_price: 0 });
+
+/** NewOrderForm — create or edit a purchase order for a customer (bought from a Chinese shop). */
+export function OrderEdit() {
+  const t = useT();
+  const { id } = useParams();
+  const nav = useNavigate();
+  const [sp] = useSearchParams();
+  const { run, busy } = useAction();
+  const { lang } = useLang();
+  const { lookups } = useApp();
+  const [o, setO] = useState<any>({ customer_id: sp.get('customer_id') ? Number(sp.get('customer_id')) : null, order_no: '', order_date: today(), payment_type: 'credit', deposit: 0, supplier_name: '', supplier_phone: '' });
+  const [items, setItems] = useState<any[]>([emptyLine()]);
+  useEffect(() => {
+    if (!id) return;
+    api(`/orders/${id}`).then((x) => { setO(x); setItems(x.items.map((i: any) => ({ ...i, key: i.id }))); });
+  }, [id]);
+  const total = items.reduce((s, i) => s + Number(i.quantity || 0) * Number(i.unit_price || 0), 0);
+  const upd = (k: any, patch: any) => setItems((xs) => xs.map((x) => (x.key === k ? { ...x, ...patch } : x)));
+  const save = async (another: boolean) => {
+    const body = { ...o, items: items.filter((i) => i.product_id || i.style_id) };
+    const r = await run(() => (id ? api(`/orders/${id}`, { method: 'PUT', body }) : api('/orders', { body })));
+    if (!r) return;
+    if (another) { setItems([emptyLine()]); setO({ ...o, order_no: '', supplier_name: '', supplier_phone: '', deposit: 0 }); }
+    else nav(`/orders?id=${id || r.id}`);
+  };
+  return (
+    <Page title={id ? `${t('Order', 'ออเดอร์', '订单')} ${o.order_no || '#' + id}` : t('New order', 'เพิ่มออเดอร์ใหม่', '新订单')}
+      actions={<>{!id && <button disabled={busy} onClick={() => save(true)}>{t('Save & new', 'บันทึกแล้วเพิ่มต่อ', '保存并新增')}</button>}
+        <button className="primary" disabled={busy} onClick={() => save(false)}>{t('Save', 'บันทึก', '保存')}</button></>}>
+      <Card>
+        <Grid cols={4}>
+          <Field label={t('Customer', 'ลูกค้า', '客户') + ' *'}><CustomerPick value={o.customer_id} onChange={(v) => setO({ ...o, customer_id: v })} placeholder={t('Choose customer', 'เลือกลูกค้า', '选择客户')} autoFocus={!id} /></Field>
+          <Field label={t('Order no. (from the shop)', 'เลขออเดอร์สินค้า', '订单号')} hint={t('Used to track the goods when packing and shipping', 'ใช้เลขนี้ติดตามสินค้าตอนแพคและขนส่ง', '打包和发货时用这个号')}><input value={o.order_no || ''} onChange={(e) => setO({ ...o, order_no: e.target.value })} /></Field>
+          <Field label={t('Order date', 'วันที่', '日期')}><input type="date" value={o.order_date} onChange={(e) => setO({ ...o, order_date: e.target.value })} /></Field>
+          <Field label={t('Shop / seller', 'ร้านค้า', '卖家')}><input value={o.supplier_name || ''} onChange={(e) => setO({ ...o, supplier_name: e.target.value })} /></Field>
+          <Field label={t('Shop phone', 'เบอร์ร้านค้า', '卖家电话')}><input value={o.supplier_phone || ''} onChange={(e) => setO({ ...o, supplier_phone: e.target.value })} /></Field>
+          <Field label={t('Payment', 'การจ่ายเงิน', '付款方式')}>
+            <div className="radios">
+              <label><input type="radio" checked={o.payment_type === 'credit'} onChange={() => setO({ ...o, payment_type: 'credit' })} /> Credit 信貸</label>
+              <label><input type="radio" checked={o.payment_type === 'paid'} onChange={() => setO({ ...o, payment_type: 'paid' })} /> {t('Already paid', 'จ่ายแล้ว', '已付')}</label>
+            </div>
+          </Field>
+          <Field label={t('Deposit (CNY)', 'มัดจำ', '定金')}><input type="number" step="any" value={o.deposit ?? 0} onChange={(e) => setO({ ...o, deposit: e.target.value })} /></Field>
+        </Grid>
+      </Card>
+      <Card title={t('Lines', 'รายการสินค้า', '产品')} actions={<button onClick={() => setItems([...items, emptyLine()])}>+ {t('Add line', 'เพิ่มรายการ', '新增项目')}</button>}>
+        <Table rowKey="key" rows={items} columns={[
+          { key: 'n', label: '#', render: (_r, i) => i + 1, width: 40 },
+          { key: 'product_id', label: t('Product id / link', 'รหัสสินค้า', '款号'), render: (r) => <input value={r.product_id || ''} onChange={(e) => upd(r.key, { product_id: e.target.value })} /> },
+          { key: 'style_id', label: t('Category', 'ประเภทสินค้า', '产品分类'), render: (r) => <StylePick value={r.style_id} onChange={(v) => upd(r.key, { style_id: v })} /> },
+          { key: 'quantity', label: t('Qty', 'จำนวน', '数量'), width: 100, render: (r) => <input type="number" step="any" value={r.quantity} onChange={(e) => upd(r.key, { quantity: e.target.value })} /> },
+          { key: 'unit_price', label: t('Unit price ¥', 'ราคา', '单价'), width: 120, render: (r) => <input type="number" step="any" value={r.unit_price} onChange={(e) => upd(r.key, { unit_price: e.target.value })} /> },
+          { key: 'total', label: t('Total ¥', 'รวม', '总价'), money: true, render: (r) => money(Number(r.quantity || 0) * Number(r.unit_price || 0)) },
+          { key: 'received_qty', label: t('Received / packed', 'รับแล้ว / แพคแล้ว', '已收货'), align: 'right', render: (r) => r.id ? `${r.received_qty || 0} / ${r.packed_qty || 0}` : '' },
+          { key: 'x', label: '', render: (r) => (!r.received_qty ? <button className="link danger" onClick={() => setItems(items.filter((x) => x.key !== r.key))}>{t('Remove', 'ลบ', '删除')}</button> : null) },
+        ]} />
+        <div className="total-line"><span>{t('Total', 'รวม', '总价')}: ¥ {money(total)}</span><span>{t('Deposit', 'มัดจำ', '定金')}: ¥ {money(o.deposit)}</span></div>
+        {lookups.styles.length === 0 && <p className="muted">{t('Tip: press + next to the category box to add a new category.', 'กดปุ่ม + ข้างช่องประเภทสินค้าเพื่อเพิ่มประเภทใหม่', '点分类旁边的 + 新增分类')}</p>}
+        {void lang}
+      </Card>
+    </Page>
+  );
+}
+
+/** SearchOrderForm */
+export function OrderSearch() {
+  const t = useT();
+  const [sp] = useSearchParams();
+  const nav = useNavigate();
+  const { lang } = useLang();
+  const [q, setQ] = useState<any>({ id: sp.get('id') || '', from: sp.get('id') ? '' : monthStart(), to: '' });
+  const { data, reload } = useApi<any[]>('/orders', q);
+  const [open, setOpen] = useState<number | null>(sp.get('id') ? Number(sp.get('id')) : null);
+  const detail = useApi<any>(open ? `/orders/${open}` : null);
+  const { run } = useAction();
+  const del = async (id: number) => {
+    if (!confirm(t('Delete this order?', 'แน่ใจหรือเปล่าว่าต้องการลบออก?', '你确定要删除吗?'))) return;
+    if (await run(() => api(`/orders/${id}`, { method: 'DELETE' }), t('Deleted', 'ลบแล้ว', '已删除'))) { setOpen(null); reload(); }
+  };
+  return (
+    <Page title={t('Search orders', 'ค้นหาออเดอร์', '搜索订单')} actions={<Link to="/orders/new"><button className="primary">+ {t('New order', 'เพิ่มออเดอร์', '新订单')}</button></Link>}>
+      <Card>
+        <Grid cols={5}>
+          <Field label={t('Customer', 'ลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => setQ({ ...q, customer_id: v })} /></Field>
+          <Field label={t('Order no.', 'เลขออเดอร์', '单号')}><input value={q.id} onChange={(e) => setQ({ ...q, id: e.target.value })} /></Field>
+          <Field label={t('Shop or product id', 'ร้านค้า / รหัสสินค้า', '卖家 / 款号')}><input value={q.q || ''} onChange={(e) => setQ({ ...q, q: e.target.value })} /></Field>
+          <DateRange from={q.from} to={q.to} onChange={(from, to) => setQ({ ...q, from, to })} />
+        </Grid>
+      </Card>
+      <Table rows={data} onRow={(r) => setOpen(open === r.id ? null : r.id)} rowClass={(r) => (r.id === open ? 'on' : '')} columns={[
+        { key: 'order_no', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (r) => <b>{r.order_no || `#${r.id}`}</b> },
+        { key: 'order_date', label: t('Date', 'วันที่', '日期') },
+        { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
+        { key: 'supplier_name', label: t('Shop', 'ร้านค้า', '卖家') },
+        { key: 'lines', label: t('Lines', 'รายการ', '列表'), align: 'right' },
+        { key: 'qty', label: t('Qty', 'จำนวน', '数量'), align: 'right' },
+        { key: 'received_qty', label: t('Received', 'รับแล้ว', '收到'), align: 'right', render: (r) => { const got = Math.max(r.received_qty, r.packed_qty); return <Badge tone={got >= r.qty ? 'good' : got ? 'warn' : 'neutral'}>{got}/{r.qty}</Badge>; } },
+        { key: 'missing', label: t('Not received yet', 'ยังไม่ได้รับ', '未收'), align: 'right', render: (r) => { const left = r.qty - Math.max(r.received_qty, r.packed_qty); return left > 0 ? <b className="neg">{left}</b> : ''; } },
+        { key: 'total', label: t('Total ¥', 'รวม', '总价'), money: true, sum: true },
+        { key: 'deposit', label: t('Deposit', 'มัดจำ', '定金'), money: true },
+        { key: 'payment_type', label: t('Payment', 'การจ่าย', '付款') },
+        { key: 'a', label: '', render: (r) => <span className="row" onClick={(e) => e.stopPropagation()}>
+          {r.qty - Math.max(r.received_qty, r.packed_qty) > 0 && <button className="link" onClick={() => nav(`/packing/new?order=${encodeURIComponent(r.order_no || r.id)}`)}>{t('Receive more', 'รับของเพิ่ม', '继续收货')}</button>}
+          <button className="link" onClick={() => nav(`/orders/${r.id}`)}>{t('Edit', 'แก้ไข', '修改')}</button>
+          <button className="link danger" onClick={() => del(r.id)}>{t('Delete', 'ลบ', '删除')}</button></span> },
+      ]} />
+      {open && detail.data && (
+        <Card title={`${t('Order', 'ออเดอร์', '订单')} ${detail.data.order_no || '#' + open} · ${detail.data.customer_code}`} className="mt">
+          <Table rows={detail.data.items} columns={[
+            { key: 'product_id', label: t('Product id', 'รหัสสินค้า', '款号') },
+            { key: 'style', label: t('Category', 'ประเภท', '分类'), render: (r) => pick({ th: r.style_th, zh: r.style_zh, en: r.style_en }, lang) },
+            { key: 'quantity', label: t('Qty', 'จำนวน', '数量'), align: 'right' },
+            { key: 'unit_price', label: t('Price ¥', 'ราคา', '单价'), money: true },
+            { key: 't', label: t('Total', 'รวม', '总价'), money: true, render: (r) => money(r.quantity * r.unit_price) },
+            { key: 'received_qty', label: t('Billed', 'เปิดบิลแล้ว', '已开单'), align: 'right' },
+            { key: 'packed_qty', label: t('Packed', 'แพคแล้ว', '打包了'), align: 'right' },
+            { key: 'left', label: t('Not received yet', 'ยังไม่ได้รับ', '未收'), align: 'right', render: (r) => { const left = r.quantity - Math.max(r.received_qty, r.packed_qty); return left > 0 ? <b className="neg">{left}</b> : <Badge tone="good">✓</Badge>; } },
+          ]} />
+        </Card>
+      )}
+    </Page>
+  );
+}
+
+/** SearchCallForm — find everything about an order id, bill code or product id. */
+export function Lookup() {
+  const t = useT();
+  const { lang } = useLang();
+  const [q, setQ] = useState('');
+  const [query, setQuery] = useState('');
+  const { data } = useApi<any>(query ? '/lookup' : null, { q: query });
+  return (
+    <Page title={t('Lookup order / bill', 'ค้นหารายละเอียด', '查找账单')}>
+      <Card>
+        <form className="row" onSubmit={(e) => { e.preventDefault(); setQuery(q.trim()); }}>
+          <input style={{ maxWidth: 420 }} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Order no., bill code or product id', 'เลขออเดอร์ / เลขบิล / รหัสสินค้า', '单号 / 划款单 / 款号')} />
+          <button className="primary">{t('Search', 'ค้นหา', '搜索')}</button>
+        </form>
+      </Card>
+      {data && (<>
+        <Card title={t('Order lines', 'รายการสั่งซื้อ', '订单')}>
+          <Table rows={data.items} columns={[
+            { key: 'order_id', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (r) => <Link to={`/orders?id=${r.order_id}`}>{r.order_no || `#${r.order_id}`}</Link> },
+            { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
+            { key: 'supplier_name', label: t('Shop', 'ร้านค้า', '卖家') },
+            { key: 'product_id', label: t('Product id', 'รหัสสินค้า', '款号') },
+            { key: 'style', label: t('Category', 'ประเภท', '分类'), render: (r) => pick({ th: r.style_th, zh: r.style_zh, en: r.style_en }, lang) },
+            { key: 'quantity', label: t('Qty', 'จำนวน', '数量'), align: 'right' },
+            { key: 'unit_price', label: t('Price ¥', 'ราคา', '单价'), money: true },
+            { key: 'received_qty', label: t('Received', 'รับแล้ว', '收到'), align: 'right' },
+            { key: 'packed_qty', label: t('Packed', 'แพคแล้ว', '打包了'), align: 'right' },
+          ]} />
+        </Card>
+        <Card title={t('Supplier bills', 'บิลโอนเงิน', '划款单')}>
+          <Table rows={data.packages} columns={[
+            { key: 'code', label: t('Bill', 'บิล', '划款单'), render: (r) => <Link to={`/packages/${r.id}`}>{r.code}</Link> },
+            { key: 'date', label: t('Date', 'วันที่', '日期') },
+            { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
+            { key: 'due', label: t('To pay ¥', 'ยอดที่ต้องจ่าย', '应付'), money: true },
+            { key: 'paid', label: t('Paid ¥', 'จ่ายแล้ว', '已付'), money: true },
+            { key: 'remaining', label: t('Left ¥', 'คงเหลือ', '余额'), money: true },
+          ]} />
+        </Card>
+        <Card title={t('Deductions / adjustments', 'รายการหัก', '其他扣除')}>
+          <Table rows={data.statements} columns={[
+            { key: 'package_code', label: t('Bill', 'บิล', '划款单') }, { key: 'product_id', label: t('Product', 'สินค้า', '产品') },
+            { key: 'type', label: t('Type', 'ประเภท', '类别') }, { key: 'amount', label: t('Amount ¥', 'ยอด', '总额'), money: true }, { key: 'description', label: t('Note', 'หมายเหตุ', '备注') },
+          ]} />
+        </Card>
+      </>)}
+    </Page>
+  );
+}
