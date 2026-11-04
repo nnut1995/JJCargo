@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, monthStart } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, PrintModal, Barcode, Combo, useAction, useAsk, Bi } from '../ui';
-import { Barcode as BarcodeIcon, Printer, Plus, X } from 'lucide-react';
+import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, PrintModal, Combo, useAction, useAsk, Bi } from '../ui';
+import { Printer, Plus, X } from 'lucide-react';
 import { SearchBox } from './Orders';
 
 function SupplierBankPick({ value, onChange }: { value: any; onChange: (v: any) => void }) {
@@ -84,7 +84,7 @@ export function PackageEdit() {
   const save = async () => {
     const body = { ...h, items: lines.map((l) => ({ id: l.id, order_item_id: l.order_item_id, quantity: l.quantity, unit_price: l.unit_price, deposit: l.deposit, receive_date: h.date })) };
     const r: any = await run(() => (id ? api(`/packages/${id}`, { method: 'PUT', body }) : api('/packages', { body })));
-    // A new bill opens with its barcode label ready to print.
+    // A new bill opens with its print view ready.
     if (r) nav(id ? `/packages/${id}` : `/packages/${r.id}?printed=new`);
   };
   return (
@@ -149,50 +149,33 @@ export function PackageEdit() {
 export function BillDoc({ k }: { k: any }) {
   const t = useT();
   const { lang } = useLang();
+  const name = [k.firstname, k.lastname].filter(Boolean).join(' ') + (k.nickname ? ` (${k.nickname})` : '');
+  // One line per order in this bill: order no., shop, shop phone, order date, qty received.
+  const orders: { key: string; no: string; shop?: string; phone?: string; date?: string; qty: number }[] = [];
+  for (const i of k.items) {
+    let o = orders.find((x) => x.key === String(i.order_id));
+    if (!o) orders.push(o = { key: String(i.order_id), no: i.order_no || `#${i.order_id}`, shop: i.supplier_name, phone: i.supplier_phone, date: i.order_date, qty: 0 });
+    o.qty += Number(i.quantity || 0);
+  }
   return (
     <div className="doc">
       <div className="doc-head">
-        <div><h2>{t('Supplier bill', 'บิลโอนเงิน', '划款单')} {k.code}</h2>
-          <div>{t('Customer', 'ลูกค้า', '客户')}: <b>{k.customer_code}</b> · {t('Date', 'วันที่', '日期')}: {k.date}</div></div>
+        <div>
+          <h2>{t('Supplier bill', 'บิลโอนเงิน', '划款单')} {k.code}</h2>
+          <div>{t('Date', 'วันที่', '日期')}: {k.date}</div>
+          <div className="doc-customer"><span className="doc-customer-code">{k.customer_code}</span>{name.trim() && <span className="doc-customer-name">{name}</span>}</div>
+        </div>
         <div style={{ textAlign: 'right' }}>{k.supplier_bank}<br />{k.supplier_account}<br />{k.supplier_number}</div>
       </div>
+      <table className="doc-orders">
+        <thead><tr><th>{t('Order', 'ออเดอร์', '订单')}</th><th>{t('Shop', 'ร้านค้า', '卖家')}</th><th>{t('Shop phone', 'เบอร์ร้าน', '卖家电话')}</th><th>{t('Order date', 'วันที่สั่ง', '下单日期')}</th><th>{t('Qty in this bill', 'จำนวนในบิลนี้', '本单数量')}</th></tr></thead>
+        <tbody>{orders.map((o) => <tr key={o.key}><td><b>{o.no}</b></td><td>{o.shop || '-'}</td><td>{o.phone || '-'}</td><td>{o.date || '-'}</td><td>{o.qty}</td></tr>)}</tbody>
+      </table>
       <table>
         <thead><tr><th>{t('Order', 'ออเดอร์', '订单')}</th><th>{t('Product', 'รหัสสินค้า', '款号')}</th><th>{t('Category', 'ประเภท', '分类')}</th><th>{t('Qty', 'จำนวน', '数量')}</th><th>{t('Price', 'ราคา', '单价')}</th><th>{t('Total', 'รวม', '总价')}</th><th>{t('Deposit', 'มัดจำ', '定金')}</th><th>{t('Deduct', 'หัก', '扣除')}</th></tr></thead>
         <tbody>{k.items.map((i: any) => <tr key={i.id}><td>{i.order_no || `#${i.order_id}`}</td><td>{i.product_id}</td><td>{pick({ th: i.style_th, zh: i.style_zh }, lang)}</td><td>{i.quantity}</td><td>{money(i.unit_price)}</td><td>{money(i.quantity * i.unit_price)}</td><td>{money(i.deposit)}</td><td>{money(i.deductions)}</td></tr>)}</tbody>
       </table>
       <div className="total-line"><span>{t('Total', 'รวม', '总价')} ¥{money(k.total)}</span><span>{t('Deposit', 'มัดจำ', '定金')} ¥{money(k.deposit)}</span><span>{t('Deductions', 'หัก', '扣除')} ¥{money(k.deductions)}</span><span>{t('To pay', 'ยอดที่ต้องโอน', '应付')} ¥{money(k.due)}</span></div>
-    </div>
-  );
-}
-
-/** Barcode label for a supplier bill: customer name large, bill code as a barcode, and what was received per order. */
-export function BillLabel({ k }: { k: any }) {
-  const t = useT();
-  const { lang } = useLang();
-  const name = [k.firstname, k.lastname].filter(Boolean).join(' ') + (k.nickname ? ` (${k.nickname})` : '');
-  const orders: { key: string; no: string; shop?: string; date?: string; items: any[] }[] = [];
-  for (const i of k.items) {
-    const key = String(i.order_id);
-    let o = orders.find((x) => x.key === key);
-    if (!o) orders.push(o = { key, no: i.order_no || `#${i.order_id}`, shop: i.supplier_name, date: i.order_date, items: [] });
-    o.items.push(i);
-  }
-  const qty = k.items.reduce((s: number, i: any) => s + Number(i.quantity || 0), 0);
-  return (
-    <div className="label-card bill-label">
-      <div className="row" style={{ justifyContent: 'space-between' }}><b>{t('Supplier bill', 'บิลโอนเงิน', '划款单')}</b><span>{k.date}</span></div>
-      <div className="code">{k.customer_code}</div>
-      {name.trim() && <div className="cust-name">{name}</div>}
-      <Barcode value={k.code} />
-      {orders.map((o) => (
-        <div key={o.key} className="bill-label-order">
-          <div className="bill-label-head"><b>{t('Order', 'ออเดอร์', '订单')} {o.no}</b><span>{[o.shop, o.date].filter(Boolean).join(' · ')}</span></div>
-          <table><tbody>{o.items.map((i: any) => (
-            <tr key={i.id}><td>{i.product_id || '-'}</td><td>{pick({ th: i.style_th, zh: i.style_zh }, lang)}</td><td className="num">{i.quantity}</td></tr>
-          ))}</tbody></table>
-        </div>
-      ))}
-      <div className="bill-label-total">{t('Total qty', 'รวมจำนวน', '总数量')} <b>{qty}</b></div>
     </div>
   );
 }
@@ -204,9 +187,8 @@ export function PackageView() {
   const can = useCan();
   const { data: k, reload } = useApi<any>(`/packages/${id}`);
   const [sp, setSp] = useSearchParams();
-  const [label, setLabel] = useState(sp.get('printed') === 'new'); // just saved: show the barcode straight away
-  const closeLabel = () => { setLabel(false); if (sp.has('printed')) setSp({}, { replace: true }); };
-  const [print, setPrint] = useState(false);
+  const [print, setPrint] = useState(sp.get('printed') === 'new'); // just saved: open the print view straight away
+  const closePrint = () => { setPrint(false); if (sp.has('printed')) setSp({}, { replace: true }); };
   const [ded, setDed] = useState<any>(null);
   const { run } = useAction();
   const { ask } = useAsk();
@@ -218,7 +200,6 @@ export function PackageView() {
   return (
     <Page back="/orders?tab=bills" title={<>{t('Bill', 'บิล', '划款单')} {k.code} {k.is_done_paid ? <Badge tone="good">{t('Paid', 'จ่ายแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</Badge>}</>}
       actions={<>
-        <button onClick={() => setLabel(true)}><BarcodeIcon size={16} aria-hidden /> {t('Barcode', 'บาร์โค้ด', '条码')}</button>
         <button onClick={() => setPrint(true)}><Printer size={16} aria-hidden /> {t('Print', 'ปริ้น', '打印')}</button>
         {!k.payments.length && <button onClick={() => nav(`/packages/${k.id}/edit`)}>{t('Edit', 'แก้ไข', '修改')}</button>}
         {!k.payments.length && <button className="danger" onClick={del}>{t('Delete', 'ลบ', '删除')}</button>}
@@ -276,8 +257,7 @@ export function PackageView() {
           </Grid>
         </Modal>
       )}
-      <PrintModal open={print} onClose={() => setPrint(false)} title={t('Print bill', 'ปริ้นบิล', '打印')}><BillDoc k={k} /></PrintModal>
-      <PrintModal open={label} onClose={closeLabel} title={t('Bill barcode', 'บาร์โค้ดบิลโอน', '划款单条码')}><BillLabel k={k} /></PrintModal>
+      <PrintModal open={print} onClose={closePrint} title={t('Print bill', 'ปริ้นบิล', '打印')}><BillDoc k={k} /></PrintModal>
     </Page>
   );
 }

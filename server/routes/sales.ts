@@ -246,7 +246,7 @@ export function salesRouter() {
       FROM packages k JOIN customers c ON c.id = k.customer_id LEFT JOIN supplier_banks sb ON sb.id = k.supplier_bank_id
       WHERE k.id = ? OR k.code = ?`, [req.params.id, req.params.id]);
     if (!k) throw new HttpError(404, 'ไม่พบบิล / Bill not found');
-    k.items = all<any>(`SELECT pi.*, oi.order_id, o.order_no, o.order_date, o.supplier_name, oi.product_id, oi.quantity AS ordered_qty, s.th AS style_th, s.zh AS style_zh,
+    k.items = all<any>(`SELECT pi.*, oi.order_id, o.order_no, o.order_date, o.supplier_name, o.supplier_phone, oi.product_id, oi.quantity AS ordered_qty, s.th AS style_th, s.zh AS style_zh,
         COALESCE((SELECT SUM(amount) FROM package_item_statements st WHERE st.package_item_id = pi.id),0) AS deductions
       FROM package_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id LEFT JOIN styles s ON s.id = oi.style_id
       WHERE pi.package_id = ? ORDER BY pi.id`, [k.id]);
