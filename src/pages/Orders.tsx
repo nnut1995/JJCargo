@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, monthStart } from '../lib';
-import { Page, Card, Grid, Field, Table, Tabs, CustomerPick, StylePick, DateRange, Badge, Modal, useAction, useAsk } from '../ui';
+import { Page, Card, Grid, Field, Table, Tabs, CustomerPick, StylePick, DateRange, Badge, Modal, Bi, useAction, useAsk } from '../ui';
 import { BillList } from './Packages';
 import { Check, Pencil, Plus, Search } from 'lucide-react';
 
@@ -116,6 +116,36 @@ export function SearchBox({ value, onChange }: { value: string; onChange: (v: st
   );
 }
 
+/** Order header shown in the order dialog: customer (large), shop, dates, payment and money. */
+function OrderInfo({ o }: { o: any }) {
+  const t = useT();
+  const name = [o.firstname, o.lastname].filter(Boolean).join(' ') + (o.nickname ? ` (${o.nickname})` : '');
+  const total = o.items.reduce((s: number, i: any) => s + i.quantity * i.unit_price, 0);
+  const qty = o.items.reduce((s: number, i: any) => s + Number(i.quantity || 0), 0);
+  const left = o.items.reduce((s: number, i: any) => s + Math.max(0, i.quantity - Math.max(i.received_qty, i.packed_qty)), 0);
+  const rows: [string, ReactNode][] = [
+    [t('Order no.', 'เลขออเดอร์', '订单号'), <b>{o.order_no || `#${o.id}`}</b>],
+    [t('Order date', 'วันที่สั่ง', '下单日期'), o.order_date],
+    [t('Shop', 'ร้านค้า', '卖家'), o.supplier_name || '-'],
+    [t('Shop phone', 'เบอร์ร้าน', '卖家电话'), o.supplier_phone || '-'],
+    [t('Payment', 'การจ่าย', '付款'), o.payment_type === 'paid' ? t('Already paid', 'จ่ายแล้ว', '已付') : 'Credit'],
+    [t('Customer phone', 'เบอร์ลูกค้า', '客户电话'), o.customer_phone || '-'],
+    [t('Created by', 'ผู้บันทึก', '录入人'), o.created_by ? `${o.created_by}${o.created_at ? ' · ' + String(o.created_at).slice(0, 16) : ''}` : '-'],
+  ];
+  return (
+    <div className="order-info">
+      <div className="order-cust"><span className="order-cust-code">{o.customer_code}</span>{name.trim() && <span className="order-cust-name">{name}</span>}</div>
+      <dl className="order-facts">{rows.map(([k, v]) => <div key={k}><dt><Bi>{k}</Bi></dt><dd>{v}</dd></div>)}</dl>
+      <div className="order-money">
+        <div><span className="muted"><Bi>{t('Total ¥', 'ยอดรวม ¥', '总价 ¥')}</Bi></span><b>{money(total)}</b></div>
+        <div><span className="muted"><Bi>{t('Deposit ¥', 'มัดจำ ¥', '定金 ¥')}</Bi></span><b>{money(o.deposit || 0)}</b></div>
+        <div><span className="muted"><Bi>{t('Qty', 'จำนวน', '数量')}</Bi></span><b>{qty}</b></div>
+        <div><span className="muted"><Bi>{t('Not received yet', 'ยังไม่ได้รับ', '未收')}</Bi></span><b className={left ? 'neg' : ''}>{left}</b></div>
+      </div>
+    </div>
+  );
+}
+
 function OrderList({ search, onSearch }: { search: string; onSearch: (v: string) => void }) {
   const t = useT();
   const [sp] = useSearchParams();
@@ -167,9 +197,7 @@ function OrderList({ search, onSearch }: { search: string; onSearch: (v: string)
             <Link to={`/orders/${open}`}><button><Pencil size={16} aria-hidden /> {t('Edit order', 'แก้ไขออเดอร์', '修改订单')}</button></Link>
             {can.menu('package.new') && detail.data.items.some((i: any) => i.quantity > i.received_qty) && <Link to={`/packages/new?order_id=${open}`}><button className="primary"><Plus size={16} aria-hidden /> {t('New bill from this order', 'เปิดบิลโอนจากออเดอร์นี้', '按此订单开划款单')}</button></Link>}
           </>}>
-          <div className="order-meta muted">
-            {detail.data.order_date} · {detail.data.supplier_name || '-'}{detail.data.supplier_phone ? ` · ${detail.data.supplier_phone}` : ''}
-          </div>
+          <OrderInfo o={detail.data} />
           <Table rows={detail.data.items} columns={[
             { key: 'product_id', label: t('Product id', 'รหัสสินค้า', '款号') },
             { key: 'style', label: t('Category', 'ประเภท', '分类'), render: (r) => pick({ th: r.style_th, zh: r.style_zh, en: r.style_en }, lang) },

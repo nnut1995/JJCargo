@@ -415,7 +415,16 @@ kbd.on-primary { background: rgba(255,255,255,0.18); color: inherit; border-colo
 /* Short notice above a form (e.g. "filled in from order ...") */
 .note { padding: 10px 14px; border-radius: 7px; margin-bottom: 16px; font-size: 13px; }
 .note.info { background: var(--info-soft); color: var(--text); }
-.order-meta { margin: -4px 0 12px; font-size: 13px; }
+.order-info { margin-bottom: 16px; }
+.order-cust { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.order-cust-code { font-size: 24px; font-weight: 700; line-height: 1.2; }
+.order-cust-name { font-size: 20px; font-weight: 600; color: var(--text-2); }
+.order-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 16px; margin: 0 0 12px; }
+.order-facts dt { font-size: 12px; color: var(--muted); }
+.order-facts dd { margin: 2px 0 0; }
+.order-money { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; background: var(--sunken); border-radius: 7px; padding: 10px 14px; }
+.order-money > div { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.order-money b { font-size: 16px; font-variant-numeric: tabular-nums; }
 .doc .doc-customer { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
 .doc .doc-customer-code { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
 .doc .doc-customer-name { font-size: 1.3rem; font-weight: 600; }

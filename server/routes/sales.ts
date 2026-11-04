@@ -137,7 +137,7 @@ export function salesRouter() {
       FROM orders o JOIN customers c ON c.id = o.customer_id WHERE ${w.join(' AND ')} ORDER BY o.id DESC LIMIT 1000`, p));
   });
   r.get('/orders/:id', (req, res) => {
-    const o = get<any>('SELECT o.*, c.code AS customer_code FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?', [req.params.id]);
+    const o = get<any>('SELECT o.*, c.code AS customer_code, c.firstname, c.lastname, c.nickname, c.phone AS customer_phone FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?', [req.params.id]);
     if (!o) throw new HttpError(404, 'ไม่พบออเดอร์ / Order not found');
     o.items = orderItemProgress('oi.order_id = ?', [o.id]);
     // Shop bank used last time for this shop, so a new bill from this order can start with it.
