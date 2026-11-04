@@ -182,6 +182,7 @@ export function Settings() {
         <Grid cols={2}>
           <Field label={t('Label printer name (for reference)', 'ชื่อ Printer', '打印机')}><input value={data.printer_name} onChange={set('printer_name')} /></Field>
           <Field label={t('Text printed on labels & bills', 'ตั้งค่าคำที่ต้องการใส่เมื่อปริ้น', '打印文字')}><input value={data.print_text} onChange={set('print_text')} /></Field>
+          <Field label={t('Phone printed on bills', 'เบอร์โทรที่พิมพ์บนบิล', '单据电话')}><input value={data.print_phone || ''} onChange={set('print_phone')} /></Field>
           <label className="row"><input type="checkbox" checked={data.print_after_pack === '1'} onChange={set('print_after_pack')} /> {t('Open the label right after packing', 'ปริ้นทันทีหลังแพค', '打包后打印')}</label>
           <label className="row"><input type="checkbox" checked={data.input_ctn_and_no === '1'} onChange={set('input_ctn_and_no')} /> {t('Type CTN / No. while packing', 'ใส่ CTN และ No. ตอนแพค', '打包时输入 CTN')}</label>
         </Grid>

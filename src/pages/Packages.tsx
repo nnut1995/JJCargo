@@ -146,36 +146,60 @@ export function PackageEdit() {
   );
 }
 
+/** Printed supplier bill, laid out like the paper 货运单 the shops use: title, customer / bill no., lines, bank + totals, signatures. */
 export function BillDoc({ k }: { k: any }) {
   const t = useT();
-  const { lang } = useLang();
+  const { lookups } = useApp();
   const name = [k.firstname, k.lastname].filter(Boolean).join(' ') + (k.nickname ? ` (${k.nickname})` : '');
-  // One line per order in this bill: order no., shop, shop phone, order date, qty received.
-  const orders: { key: string; no: string; shop?: string; phone?: string; date?: string; qty: number }[] = [];
-  for (const i of k.items) {
-    let o = orders.find((x) => x.key === String(i.order_id));
-    if (!o) orders.push(o = { key: String(i.order_id), no: i.order_no || `#${i.order_id}`, shop: i.supplier_name, phone: i.supplier_phone, date: i.order_date, qty: 0 });
-    o.qty += Number(i.quantity || 0);
-  }
+  const shops = [...new Set(k.items.map((i: any) => i.supplier_name).filter(Boolean))].join(', ');
+  const qty = k.items.reduce((s: number, i: any) => s + Number(i.quantity || 0), 0);
+  const L = (_en: string, th: string, zh: string) => <span className="bd-l">{zh}<small>{th}</small></span>;
   return (
-    <div className="doc">
-      <div className="doc-head">
-        <div>
-          <h2>{t('Supplier bill', 'บิลโอนเงิน', '划款单')} {k.code}</h2>
-          <div>{t('Date', 'วันที่', '日期')}: {k.date}</div>
-          <div className="doc-customer"><span className="doc-customer-code">{k.customer_code}</span>{name.trim() && <span className="doc-customer-name">{name}</span>}</div>
-        </div>
-        <div style={{ textAlign: 'right' }}>{k.supplier_bank}<br />{k.supplier_account}<br />{k.supplier_number}</div>
+    <div className="doc bill-doc">
+      <header className="bd-title">
+        <div className="bd-company">{lookups.settings.print_text || 'JJ Cargo'}</div>
+        <div className="bd-kind">划款单 <span>บิลโอนเงิน</span></div>
+      </header>
+      <div className="bd-head">
+        <dl>
+          <div><dt>{L('Customer', 'ลูกค้า', '客户')}</dt><dd><b className="bd-cust">{k.customer_code}</b>{name.trim() && <span className="bd-name">{name}</span>}</dd></div>
+          {shops && <div><dt>{L('Shop', 'ร้านค้า', '档口')}</dt><dd>{shops}</dd></div>}
+        </dl>
+        <dl className="bd-right">
+          <div><dt>{L('No.', 'เลขที่', '单号')}</dt><dd><b>{k.code}</b></dd></div>
+          <div><dt>{L('Date', 'วันที่', '时间')}</dt><dd>{k.date}</dd></div>
+        </dl>
       </div>
-      <table className="doc-orders">
-        <thead><tr><th>{t('Order', 'ออเดอร์', '订单')}</th><th>{t('Shop', 'ร้านค้า', '卖家')}</th><th>{t('Shop phone', 'เบอร์ร้าน', '卖家电话')}</th><th>{t('Order date', 'วันที่สั่ง', '下单日期')}</th><th>{t('Qty in this bill', 'จำนวนในบิลนี้', '本单数量')}</th></tr></thead>
-        <tbody>{orders.map((o) => <tr key={o.key}><td><b>{o.no}</b></td><td>{o.shop || '-'}</td><td>{o.phone || '-'}</td><td>{o.date || '-'}</td><td>{o.qty}</td></tr>)}</tbody>
+      <table className="bd-lines">
+        <thead><tr>
+          <th>{L('Received', 'วันที่รับ', '收货')}</th><th>{L('Order no.', 'เลขออเดอร์', '订单单号')}</th><th>{L('Product', 'รหัสสินค้า', '款号')}</th>
+          <th className="num">{L('Qty', 'จำนวน', '数量')}</th><th className="num">{L('Price', 'ราคา', '单价')}</th><th className="num">{L('Amount', 'รวม', '总额')}</th>
+        </tr></thead>
+        <tbody>{k.items.map((i: any) => (
+          <tr key={i.id}><td>{i.receive_date || k.date}</td><td>{i.order_no || `#${i.order_id}`}</td><td>{i.product_id || '-'}</td>
+            <td className="num">{money(i.quantity)}</td><td className="num">{money(i.unit_price, 3)}</td><td className="num">{money(i.quantity * i.unit_price)}</td></tr>
+        ))}</tbody>
+        <tfoot><tr><td colSpan={3}>{L('Total qty', 'รวมจำนวน', '合计数量')}</td><td className="num">{money(qty)}</td><td /><td className="num">{money(k.total)}</td></tr></tfoot>
       </table>
-      <table>
-        <thead><tr><th>{t('Order', 'ออเดอร์', '订单')}</th><th>{t('Product', 'รหัสสินค้า', '款号')}</th><th>{t('Category', 'ประเภท', '分类')}</th><th>{t('Qty', 'จำนวน', '数量')}</th><th>{t('Price', 'ราคา', '单价')}</th><th>{t('Total', 'รวม', '总价')}</th><th>{t('Deposit', 'มัดจำ', '定金')}</th><th>{t('Deduct', 'หัก', '扣除')}</th></tr></thead>
-        <tbody>{k.items.map((i: any) => <tr key={i.id}><td>{i.order_no || `#${i.order_id}`}</td><td>{i.product_id}</td><td>{pick({ th: i.style_th, zh: i.style_zh }, lang)}</td><td>{i.quantity}</td><td>{money(i.unit_price)}</td><td>{money(i.quantity * i.unit_price)}</td><td>{money(i.deposit)}</td><td>{money(i.deductions)}</td></tr>)}</tbody>
-      </table>
-      <div className="total-line"><span>{t('Total', 'รวม', '总价')} ¥{money(k.total)}</span><span>{t('Deposit', 'มัดจำ', '定金')} ¥{money(k.deposit)}</span><span>{t('Deductions', 'หัก', '扣除')} ¥{money(k.deductions)}</span><span>{t('To pay', 'ยอดที่ต้องโอน', '应付')} ¥{money(k.due)}</span></div>
+      <div className="bd-bottom">
+        <ol className="bd-bank">
+          <li><span>{L('Bank', 'ธนาคาร', '开户银行')}</span><b>{k.supplier_bank || '-'}</b></li>
+          <li><span>{L('Account name', 'ชื่อบัญชี', '开户人')}</span><b>{k.supplier_account || '-'}</b></li>
+          <li><span>{L('Account / card no.', 'เลขบัญชี', '账户/卡号')}</span><b className="mono">{k.supplier_number || '-'}</b></li>
+          <li><span>{L('Supplier phone', 'เบอร์ร้าน', '供应商电话')}</span><b>{k.supplier_tel || '-'}</b></li>
+        </ol>
+        <dl className="bd-totals">
+          <div><dt>{L('Total', 'รวม', '共计')}</dt><dd>{money(k.total)}</dd></div>
+          <div><dt>{L('Deposit', 'มัดจำ', '预付定金')}</dt><dd>{money(k.deposit)}</dd></div>
+          {Number(k.deductions) ? <div><dt>{L('Deductions', 'หัก', '扣除')}</dt><dd>{money(k.deductions)}</dd></div> : null}
+          <div className="bd-due"><dt>{L('To pay', 'ยอดที่ต้องโอน', '余额')}</dt><dd>¥ {money(k.due)}</dd></div>
+        </dl>
+      </div>
+      <footer className="bd-foot">
+        <div>{lookups.settings.print_phone && <>{L('Phone', 'โทร', '电话')} <b>{lookups.settings.print_phone}</b></>}</div>
+        <div className="bd-sign"><span>{L('Supplier signature', 'ลายเซ็นร้านค้า', '供应商代表签名')}</span><i /></div>
+        <div className="bd-sign"><span>{L('Handled by', 'ผู้ทำรายการ', '经手人')}</span><b>{k.created_by || ''}</b></div>
+      </footer>
     </div>
   );
 }
