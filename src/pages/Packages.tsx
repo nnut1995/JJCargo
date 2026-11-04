@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, monthStart } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, PrintModal, Combo, useAction, useAsk, Bi } from '../ui';
-import { Printer, Plus, X } from 'lucide-react';
+import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, PrintModal, Barcode, Combo, useAction, useAsk, Bi } from '../ui';
+import { Barcode as BarcodeIcon, Printer, Plus, X } from 'lucide-react';
 import { SearchBox } from './Orders';
 
 function SupplierBankPick({ value, onChange }: { value: any; onChange: (v: any) => void }) {
@@ -84,7 +84,8 @@ export function PackageEdit() {
   const save = async () => {
     const body = { ...h, items: lines.map((l) => ({ id: l.id, order_item_id: l.order_item_id, quantity: l.quantity, unit_price: l.unit_price, deposit: l.deposit, receive_date: h.date })) };
     const r: any = await run(() => (id ? api(`/packages/${id}`, { method: 'PUT', body }) : api('/packages', { body })));
-    if (r) nav(`/packages/${id || r.id}`);
+    // A new bill opens with its barcode label ready to print.
+    if (r) nav(id ? `/packages/${id}` : `/packages/${r.id}?printed=new`);
   };
   return (
     <Page back={id ? `/packages/${id}` : '/orders?tab=bills'} title={id ? `${t('Bill', 'บิล', '划款单')} ${h.code}` : t('New supplier bill / receive goods', 'เปิดบิลโอนใหม่ / รับของ', '开划款单 / 收货')}
@@ -164,12 +165,29 @@ export function BillDoc({ k }: { k: any }) {
   );
 }
 
+/** Barcode label for a supplier bill: bill code as a barcode, customer, date and order numbers. */
+export function BillLabel({ k }: { k: any }) {
+  const t = useT();
+  const orders = [...new Set(k.items.map((i: any) => i.order_no || `#${i.order_id}`))].join(', ');
+  return (
+    <div className="label-card">
+      <div className="row" style={{ justifyContent: 'space-between' }}><b>{t('Supplier bill', 'บิลโอนเงิน', '划款单')}</b><span>{k.date}</span></div>
+      <div className="code">{k.customer_code}</div>
+      <Barcode value={k.code} />
+      {orders && <div style={{ fontSize: 12, marginTop: 4 }}>{t('Orders', 'ออเดอร์', '订单')}: {orders}</div>}
+    </div>
+  );
+}
+
 export function PackageView() {
   const t = useT();
   const { id } = useParams();
   const nav = useNavigate();
   const can = useCan();
   const { data: k, reload } = useApi<any>(`/packages/${id}`);
+  const [sp, setSp] = useSearchParams();
+  const [label, setLabel] = useState(sp.get('printed') === 'new'); // just saved: show the barcode straight away
+  const closeLabel = () => { setLabel(false); if (sp.has('printed')) setSp({}, { replace: true }); };
   const [print, setPrint] = useState(false);
   const [ded, setDed] = useState<any>(null);
   const { run } = useAction();
@@ -182,6 +200,7 @@ export function PackageView() {
   return (
     <Page back="/orders?tab=bills" title={<>{t('Bill', 'บิล', '划款单')} {k.code} {k.is_done_paid ? <Badge tone="good">{t('Paid', 'จ่ายแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</Badge>}</>}
       actions={<>
+        <button onClick={() => setLabel(true)}><BarcodeIcon size={16} aria-hidden /> {t('Barcode', 'บาร์โค้ด', '条码')}</button>
         <button onClick={() => setPrint(true)}><Printer size={16} aria-hidden /> {t('Print', 'ปริ้น', '打印')}</button>
         {!k.payments.length && <button onClick={() => nav(`/packages/${k.id}/edit`)}>{t('Edit', 'แก้ไข', '修改')}</button>}
         {!k.payments.length && <button className="danger" onClick={del}>{t('Delete', 'ลบ', '删除')}</button>}
@@ -240,6 +259,7 @@ export function PackageView() {
         </Modal>
       )}
       <PrintModal open={print} onClose={() => setPrint(false)} title={t('Print bill', 'ปริ้นบิล', '打印')}><BillDoc k={k} /></PrintModal>
+      <PrintModal open={label} onClose={closeLabel} title={t('Bill barcode', 'บาร์โค้ดบิลโอน', '划款单条码')}><BillLabel k={k} /></PrintModal>
     </Page>
   );
 }
