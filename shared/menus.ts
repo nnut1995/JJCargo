@@ -7,6 +7,8 @@ export interface MenuItem {
   th: string;
   zh: string;
   en: string;
+  /** Shown inside another screen instead of having its own sidebar entry (still a separate permission). */
+  navAs?: string;
 }
 export interface MenuGroup {
   key: string;
@@ -24,11 +26,11 @@ export const MENU: MenuGroup[] = [
   {
     key: 'order', th: 'ออเดอร์', zh: '订单', en: 'Orders',
     items: [
-      { key: 'order.new', path: '/orders/new', th: 'เพิ่มออเดอร์ใหม่', zh: '新订单', en: 'New order' },
-      { key: 'order.search', path: '/orders', th: 'ค้นหาออเดอร์', zh: '搜索订单', en: 'Search orders' },
-      { key: 'package.new', path: '/packages/new', th: 'เปิดบิลโอนใหม่', zh: '开划款单', en: 'New supplier bill' },
-      { key: 'package.search', path: '/packages', th: 'ค้นหาบิลโอนเงิน', zh: '找划款单', en: 'Search bills' },
-      { key: 'package.lookup', path: '/lookup', th: 'ค้นหารายละเอียด', zh: '查找账单', en: 'Lookup order / bill' },
+      { key: 'order.new', path: '/orders/new', th: 'เพิ่มออเดอร์ใหม่', zh: '新订单', en: 'New order', navAs: 'order.search' },
+      { key: 'order.search', path: '/orders', th: 'ออเดอร์ + บิลโอน', zh: '订单 + 划款单', en: 'Orders & bills' },
+      { key: 'package.new', path: '/packages/new', th: 'เปิดบิลโอนใหม่', zh: '开划款单', en: 'New supplier bill', navAs: 'order.search' },
+      { key: 'package.search', path: '/packages', th: 'ค้นหาบิลโอนเงิน', zh: '找划款单', en: 'Search bills', navAs: 'order.search' },
+      { key: 'package.lookup', path: '/lookup', th: 'ค้นหารายละเอียด', zh: '查找账单', en: 'Lookup order / bill', navAs: 'order.search' },
     ],
   },
   {

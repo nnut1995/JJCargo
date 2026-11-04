@@ -37,6 +37,13 @@ export function activeItem(pathname: string, items: MenuItem[]) {
   return best;
 }
 
+/** Menu groups as the sidebar shows them: no navAs screens; a host screen shows if it or any folded screen is allowed. */
+export function sidebarGroups(allowed: MenuItem[]) {
+  const ok = new Set(allowed.map((i) => i.key));
+  allowed.forEach((i) => i.navAs && ok.add(i.navAs));
+  return MENU.map((g) => ({ g, items: g.items.filter((i) => !i.navAs && ok.has(i.key)) })).filter((x) => x.items.length);
+}
+
 function readSet(key: string): string[] | null {
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; }
 }
@@ -80,13 +87,13 @@ function GoTo({ open, onClose, items }: { open: boolean; onClose: () => void; it
   useEffect(() => { if (open) { setQ(''); setHi(0); } }, [open]);
   const results = useMemo(() => {
     const s = q.trim().toLowerCase();
-    const hits = s ? items.filter((i) => `${i.th} ${i.zh} ${i.en} ${groupOf[i.key].th} ${groupOf[i.key].zh} ${groupOf[i.key].en}`.toLowerCase().includes(s)) : items;
+    const hits = (s ? items.filter((i) => `${i.th} ${i.zh} ${i.en} ${groupOf[i.key].th} ${groupOf[i.key].zh} ${groupOf[i.key].en}`.toLowerCase().includes(s)) : items).filter((i) => i.key !== 'package.lookup');
     const rows: { key: string; label: string; sub: string; go: () => void; icon: LucideIcon }[] = hits.map((i) => ({
       key: i.key, label: pick(i, lang), sub: pick(groupOf[i.key], lang), icon: ITEM_ICON[i.key] || FileText, go: () => nav(i.path),
     }));
-    if (s && items.some((i) => i.key === 'package.lookup')) {
+    if (s && items.some((i) => i.key === 'order.search' || i.key === 'package.search')) {
       rows.push({ key: '_lookup', label: `${t('Look up code', 'ค้นหาเลข', '查找单号')} “${q.trim()}”`, sub: t('Order no., bill code or product id', 'เลขออเดอร์ / เลขบิล / รหัสสินค้า', '单号 / 划款单 / 款号'),
-        icon: Search, go: () => nav(`/lookup?q=${encodeURIComponent(q.trim())}`) });
+        icon: Search, go: () => nav(`/orders?${items.some((i) => i.key === 'order.search') ? '' : 'tab=bills&'}q=${encodeURIComponent(q.trim())}`) });
     }
     return rows;
   }, [q, items, lang, nav, t, groupOf]);
@@ -135,9 +142,11 @@ export function Shell({ user, children, onLogout }: { user: User; children: Reac
   const [goto, setGoto] = useState(false);
   useEffect(() => setNavOpen(false), [loc.pathname]);
   const can = (k: string) => !!user.is_admin || user.menus.includes(k);
-  const groups = MENU.map((g) => ({ g, items: g.items.filter((i) => can(i.key)) })).filter((x) => x.items.length);
-  const allowed = groups.flatMap((x) => x.items);
-  const active = activeItem(loc.pathname, allowed);
+  const allowed = MENU.flatMap((g) => g.items).filter((i) => can(i.key));
+  // Sidebar: screens folded into another (navAs) show as that screen, which appears if any of them is allowed.
+  const groups = sidebarGroups(allowed);
+  const hit = activeItem(loc.pathname, allowed);
+  const active = hit?.navAs ? { ...hit, key: hit.navAs } : hit;
   const activeGroup = groups.find((x) => x.items.some((i) => i.key === active?.key))?.g.key;
   // which groups are expanded: remembered per browser; the group of the open screen is always expanded
   const [openGroups, setOpenGroups] = useState<string[]>(() => readSet('jj.navGroups') || []);
@@ -172,9 +181,12 @@ export function Shell({ user, children, onLogout }: { user: User; children: Reac
       <nav className={`sidebar${navOpen ? ' open' : ''}`} aria-label="Main">
         {groups.map(({ g, items }) => {
           const GIcon = GROUP_ICON[g.key] || FileText;
-          if (g.key === 'main') {
+          // Overview, and any group with a single screen, show as one top-level link.
+          if (g.key === 'main' || items.length === 1) {
             return items.map((i) => (
-              <NavLink key={i.key} to={i.path} end className="nav-item top"><GIcon size={18} aria-hidden /><Bi>{pick(i, lang)}</Bi></NavLink>
+              <NavLink key={i.key} to={i.path} end className={() => `nav-item top${active?.key === i.key ? ' active' : ''}`} aria-current={active?.key === i.key ? 'page' : undefined}>
+                <GIcon size={18} aria-hidden /><Bi>{pick(i, lang)}</Bi>
+              </NavLink>
             ));
           }
           const expanded = openGroups.includes(g.key) || activeGroup === g.key;

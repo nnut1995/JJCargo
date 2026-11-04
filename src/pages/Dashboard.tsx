@@ -4,7 +4,7 @@ import { MENU } from '../../shared/menus';
 import { SHIPMENT_STATUSES } from '../../shared/statuses';
 import { useApi, useT, money, useCan, useLang, pick } from '../lib';
 import { Page, Card, Stat, Table, Badge, Bi } from '../ui';
-import { GROUP_ICON, ITEM_ICON, useRecent } from '../nav';
+import { GROUP_ICON, ITEM_ICON, sidebarGroups, useRecent } from '../nav';
 
 const ITEMS = Object.fromEntries(MENU.flatMap((g) => g.items.map((i) => [i.key, i])));
 
@@ -15,7 +15,7 @@ export default function Dashboard() {
   const t = useT();
   const can = useCan();
   const { lang } = useLang();
-  const recent = useRecent().filter((k) => ITEMS[k] && can.menu(k)).slice(0, 6);
+  const recent = useRecent().filter((k) => ITEMS[k] && k !== 'package.lookup' && can.menu(k)).slice(0, 6);
   const { data: d, reload, loading } = useApi<any>('/dashboard');
   const label = (k: string) => pick(ITEMS[k], lang);
 
@@ -35,7 +35,7 @@ export default function Dashboard() {
   const open = todo.filter((x) => x.n > 0);
   const done = todo.filter((x) => !x.n);
   const flow = FLOW.filter((k) => can.menu(k));
-  const groups = MENU.filter((g) => g.key !== 'main').map((g) => ({ g, items: g.items.filter((i) => can.menu(i.key)) })).filter((x) => x.items.length);
+  const groups = sidebarGroups(MENU.flatMap((g) => g.items).filter((i) => can.menu(i.key))).filter((x) => x.g.key !== 'main');
 
   return (
     <Page title={t('Dashboard', 'แดชบอร์ด', '仪表板')}

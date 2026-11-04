@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BrowserRouter, Link, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { api, AppProvider, useT, type Lookups, type User } from './lib';
 import { useAction } from './ui';
 import { Shell, LangSwitch } from './nav';
 import Dashboard from './pages/Dashboard';
-import { OrderEdit, OrderSearch, Lookup } from './pages/Orders';
-import { PackageEdit, PackageSearch, PackageView } from './pages/Packages';
+import { OrderEdit, OrdersHub } from './pages/Orders';
+import { PackageEdit, PackageView } from './pages/Packages';
 import { PackNew, PackingSearch, PackingImport, PackWeigh } from './pages/Packing';
 import { Shipments, LoadContainer, ShipmentSummary, ShippingCharges, ShipmentReport } from './pages/Shipments';
 import { Customers, CustomerEdit, Balances } from './pages/Customers';
@@ -37,6 +37,12 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
   );
 }
 
+/** Old links (e.g. /lookup?q=PO123) keep working: send them to the new screen with the same query. */
+function RedirectWithQuery({ to }: { to: string }) {
+  const loc = useLocation();
+  return <Navigate to={to + loc.search} replace />;
+}
+
 function NotFound() {
   const t = useT();
   return <div className="page"><div className="empty big"><h1>404</h1><p>{t('This page does not exist.', 'ไม่พบหน้านี้', '页面不存在')}</p><Link to="/">{t('Back to dashboard', 'กลับหน้าแรก', '返回首页')}</Link></div></div>;
@@ -64,11 +70,11 @@ export default function App() {
         <Shell user={user} onLogout={logout}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/orders" element={<OrderSearch />} />
+            <Route path="/orders" element={<OrdersHub />} />
             <Route path="/orders/new" element={<OrderEdit />} />
             <Route path="/orders/:id" element={<OrderEdit />} />
-            <Route path="/lookup" element={<Lookup />} />
-            <Route path="/packages" element={<PackageSearch />} />
+            <Route path="/lookup" element={<RedirectWithQuery to="/orders" />} />
+            <Route path="/packages" element={<Navigate to="/orders?tab=bills" replace />} />
             <Route path="/packages/new" element={<PackageEdit />} />
             <Route path="/packages/:id" element={<PackageView />} />
             <Route path="/packages/:id/edit" element={<PackageEdit />} />

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, monthStart } from '../lib';
 import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, PrintModal, Combo, useAction, useAsk } from '../ui';
 import { Printer, Plus, X } from 'lucide-react';
+import { SearchBox } from './Orders';
 
 function SupplierBankPick({ value, onChange }: { value: any; onChange: (v: any) => void }) {
   const t = useT();
@@ -66,7 +67,7 @@ export function PackageEdit() {
     if (r) nav(`/packages/${id || r.id}`);
   };
   return (
-    <Page back={id ? `/packages/${id}` : undefined} title={id ? `${t('Bill', 'บิล', '划款单')} ${h.code}` : t('New supplier bill / receive goods', 'เปิดบิลโอนใหม่ / รับของ', '开划款单 / 收货')}
+    <Page back={id ? `/packages/${id}` : '/orders?tab=bills'} title={id ? `${t('Bill', 'บิล', '划款单')} ${h.code}` : t('New supplier bill / receive goods', 'เปิดบิลโอนใหม่ / รับของ', '开划款单 / 收货')}
       actions={<button className="primary" disabled={busy || !lines.length} onClick={save}>{t('Save bill', 'บันทึก', '保存')}</button>}>
       <Card>
         <Grid cols={4}>
@@ -152,7 +153,7 @@ export function PackageView() {
     if (await run(() => api(`/packages/${k.id}`, { method: 'DELETE' }), t('Deleted', 'ลบแล้ว', '已删除'))) nav('/packages');
   };
   return (
-    <Page back="/packages" title={<>{t('Bill', 'บิล', '划款单')} {k.code} {k.is_done_paid ? <Badge tone="good">{t('Paid', 'จ่ายแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</Badge>}</>}
+    <Page back="/orders?tab=bills" title={<>{t('Bill', 'บิล', '划款单')} {k.code} {k.is_done_paid ? <Badge tone="good">{t('Paid', 'จ่ายแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</Badge>}</>}
       actions={<>
         <button onClick={() => setPrint(true)}><Printer size={16} aria-hidden /> {t('Print', 'ปริ้น', '打印')}</button>
         {!k.payments.length && <button onClick={() => nav(`/packages/${k.id}/edit`)}>{t('Edit', 'แก้ไข', '修改')}</button>}
@@ -216,19 +217,19 @@ export function PackageView() {
   );
 }
 
-export function PackageSearch() {
+/** Supplier bill list, shown as the second tab of the Orders screen. */
+export function BillList({ search, onSearch }: { search: string; onSearch: (v: string) => void }) {
   const t = useT();
   const nav = useNavigate();
   const [q, setQ] = useState<any>({ from: monthStart(), to: '', paid: '' });
-  const { data } = useApi<any[]>('/packages', q);
+  const { data } = useApi<any[]>('/packages', { ...q, search, from: search ? '' : q.from, to: search ? '' : q.to });
   return (
-    <Page title={t('Search supplier bills', 'ค้นหาบิลโอนเงิน', '找划款单')} actions={<Link to="/packages/new"><button className="primary"><Plus size={16} aria-hidden /> {t('New bill', 'เปิดบิลโอนใหม่', '开划款单')}</button></Link>}>
+    <>
       <Card>
-        <Grid cols={6}>
+        <Grid cols={5}>
+          <SearchBox value={search} onChange={onSearch} />
           <Field label={t('Customer', 'ลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => setQ({ ...q, customer_id: v })} /></Field>
-          <Field label={t('Bill code', 'เลขบิล', '划款单号')}><input value={q.code || ''} onChange={(e) => setQ({ ...q, code: e.target.value })} /></Field>
-          <Field label={t('Order no.', 'เลขออเดอร์', '单号')}><input value={q.order_id || ''} onChange={(e) => setQ({ ...q, order_id: e.target.value })} /></Field>
-          <DateRange from={q.from} to={q.to} onChange={(from, to) => setQ({ ...q, from, to })} />
+          <DateRange from={search ? '' : q.from} to={search ? '' : q.to} onChange={(from, to) => setQ({ ...q, from, to })} />
           <Field label={t('Paid?', 'สถานะ', '状态')}>
             <select value={q.paid} onChange={(e) => setQ({ ...q, paid: e.target.value })}>
               <option value="">{t('All', 'ทั้งหมด', '全部')}</option><option value="0">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</option><option value="1">{t('Paid', 'จ่ายแล้ว', '已付')}</option>
@@ -250,6 +251,6 @@ export function PackageSearch() {
         { key: 'st', label: '', render: (r) => r.is_done_paid ? <Badge tone="good">{t('Paid', 'จ่ายแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</Badge> },
         { key: 'created_by', label: t('By', 'โดย', '人') },
       ]} />
-    </Page>
+    </>
   );
 }

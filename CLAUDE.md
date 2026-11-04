@@ -82,6 +82,8 @@ scripts/flow.ts        full business flow through the API with assertions (used 
 - Never use `confirm()` / `prompt()` / `alert()`: `const { ask, askText } = useAsk()` then `await ask(msg, { danger: true })`; toasts for results.
 - `t()` in Thai+Chinese mode returns `th + U+2002 + zh + U+2060`. `<Bi>` (used automatically by Page/Card/Field/Table headers/Tabs) shows the Chinese half quieter. Don't `split(' ')` labels; use `BI_SEP`.
 - New screen: also give its menu key an icon in `ITEM_ICON` (src/nav.tsx). Detail pages pass `back="/list-path"` to `<Page>`.
+- A menu item with `navAs: '<key>'` keeps its own permission but has no sidebar entry; it lights up the `<key>` screen instead.
+  Orders: `/orders` (`OrdersHub`) holds the order list and supplier bills as tabs with one search box; `/packages` and `/lookup` redirect there.
 
 ## Conventions
 - All route handlers are synchronous (node:sqlite is sync) and throw `HttpError(status, message)`; messages are bilingual where the user sees them.

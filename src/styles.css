@@ -406,3 +406,8 @@ details.more[open] > summary { margin-bottom: 14px; }
 kbd.on-primary { background: rgba(255,255,255,0.18); color: inherit; border-color: rgba(255,255,255,0.35); }
 .done-list { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .done-list .chip { box-shadow: none; font-size: 0.86rem; padding: 5px 10px; }
+
+/* Search field with a leading icon (orders + bills hub) */
+.search-input { position: relative; }
+.search-input svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.search-input input { width: 100%; padding-left: 34px; }

@@ -120,6 +120,14 @@ export function salesRouter() {
     if (req.query.from) { w.push('o.order_date >= ?'); p.push(req.query.from); }
     if (req.query.to) { w.push('o.order_date <= ?'); p.push(req.query.to); }
     if (req.query.q) { w.push('(o.supplier_name LIKE ? OR EXISTS (SELECT 1 FROM order_items x WHERE x.order_id = o.id AND x.product_id LIKE ?))'); p.push(`%${req.query.q}%`, `%${req.query.q}%`); }
+    // one box for everything (replaces the old "lookup" screen): order no., shop, product id or supplier bill code
+    if (req.query.search) {
+      const s = String(req.query.search).trim();
+      w.push(`(CAST(o.id AS TEXT) = ? OR o.order_no LIKE ? OR o.supplier_name LIKE ?
+        OR EXISTS (SELECT 1 FROM order_items x WHERE x.order_id = o.id AND x.product_id LIKE ?)
+        OR EXISTS (SELECT 1 FROM order_items x JOIN package_items pi ON pi.order_item_id = x.id JOIN packages k ON k.id = pi.package_id WHERE x.order_id = o.id AND k.code LIKE ?))`);
+      p.push(s.replace(/^#/, ''), `%${s}%`, `%${s}%`, `%${s}%`, `%${s}%`);
+    }
     res.json(all(`SELECT o.*, c.code AS customer_code, c.firstname, c.nickname,
         (SELECT COUNT(*) FROM order_items i WHERE i.order_id = o.id) AS lines,
         (SELECT COALESCE(SUM(quantity*unit_price),0) FROM order_items i WHERE i.order_id = o.id) AS total,
@@ -215,6 +223,12 @@ export function salesRouter() {
     if (req.query.from) { w.push('k.date >= ?'); p.push(req.query.from); }
     if (req.query.to) { w.push('k.date <= ?'); p.push(req.query.to); }
     if (req.query.paid === '0' || req.query.paid === '1') { w.push('k.is_done_paid = ?'); p.push(Number(req.query.paid)); }
+    if (req.query.search) {
+      const s = String(req.query.search).trim();
+      w.push(`(k.code LIKE ? OR EXISTS (SELECT 1 FROM package_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id
+        WHERE pi.package_id = k.id AND (CAST(o.id AS TEXT) = ? OR o.order_no LIKE ? OR oi.product_id LIKE ? OR o.supplier_name LIKE ?)))`);
+      p.push(`%${s}%`, s.replace(/^#/, ''), `%${s}%`, `%${s}%`, `%${s}%`);
+    }
     if (req.query.order_id) { w.push('EXISTS (SELECT 1 FROM package_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id WHERE pi.package_id = k.id AND (oi.order_id = ? OR o.order_no LIKE ?))'); p.push(req.query.order_id, `%${req.query.order_id}%`); }
     const rows = all<any>(`SELECT k.*, c.code AS customer_code,
         (SELECT GROUP_CONCAT(DISTINCT COALESCE(o.order_no, '#' || o.id)) FROM package_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id WHERE pi.package_id = k.id) AS order_nos, sb.bank AS supplier_bank, sb.account_name AS supplier_account
