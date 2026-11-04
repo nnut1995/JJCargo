@@ -470,3 +470,7 @@ kbd.on-primary { background: rgba(255,255,255,0.18); color: inherit; border-colo
   .bill-doc { padding: 12px 4px; }
   .bill-doc table.bd-lines { display: block; overflow-x: auto; }
 }
+/* Printed documents stay black on white even when the app is in dark mode. */
+.doc td, .doc th { color: #000; }
+.doc tfoot td { background: #f3f3f3; position: static; }
+.doc tbody tr:hover td { background: transparent; }
