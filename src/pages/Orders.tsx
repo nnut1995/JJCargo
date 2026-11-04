@@ -154,6 +154,7 @@ function OrderList({ search, onSearch, onShowBills }: { search: string; onSearch
         { key: 'deposit', label: t('Deposit', 'มัดจำ', '定金'), money: true },
         { key: 'payment_type', label: t('Payment', 'การจ่าย', '付款') },
         { key: 'a', label: '', render: (r) => <span className="row" onClick={(e) => e.stopPropagation()}>
+          {can.menu('package.new') && r.received_qty < r.qty && <button className="link" onClick={() => nav(`/packages/new?order_id=${r.id}`)}>{t('Open bill', 'เปิดบิลโอน', '开划款单')}</button>}
           {r.qty - Math.max(r.received_qty, r.packed_qty) > 0 && <button className="link" onClick={() => nav(`/packing/new?order=${encodeURIComponent(r.order_no || r.id)}`)}>{t('Receive more', 'รับของเพิ่ม', '继续收货')}</button>}
           <button className="link" onClick={() => nav(`/orders/${r.id}`)}>{t('Edit', 'แก้ไข', '修改')}</button>
           <button className="link danger" onClick={() => del(r.id)}>{t('Delete', 'ลบ', '删除')}</button></span> },
@@ -172,6 +173,7 @@ function OrderList({ search, onSearch, onShowBills }: { search: string; onSearch
           ]} />
           <div className="row" style={{ marginTop: 12 }}>
             {(can.menu('package.search') || can.menu('package.new')) && <button onClick={() => onShowBills(detail.data.order_no || String(open))}><ReceiptText size={16} aria-hidden /> {t('Supplier bills of this order', 'ดูบิลโอนของออเดอร์นี้', '查看此订单的划款单')}</button>}
+            {can.menu('package.new') && detail.data.items.some((i: any) => i.quantity > i.received_qty) && <Link to={`/packages/new?order_id=${open}`}><button><Plus size={16} aria-hidden /> {t('New bill from this order', 'เปิดบิลโอนจากออเดอร์นี้', '按此订单开划款单')}</button></Link>}
             {can.menu('package.new') && <Link to={`/packages/new?customer_id=${detail.data.customer_id}`}><button><Plus size={16} aria-hidden /> {t('New bill for this customer', 'เปิดบิลโอนให้ลูกค้านี้', '为此客户开划款单')}</button></Link>}
           </div>
         </Card>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, monthStart } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, PrintModal, Combo, useAction, useAsk } from '../ui';
+import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, PrintModal, Combo, useAction, useAsk, Bi } from '../ui';
 import { Printer, Plus, X } from 'lucide-react';
 import { SearchBox } from './Orders';
 
@@ -40,6 +40,10 @@ function SupplierBankPick({ value, onChange }: { value: any; onChange: (v: any) 
 }
 
 /** NewPackageForm / ReceiveForm — receive goods for order lines and open a payment bill to the shop. */
+/** An order line not billed yet, as a line of a new bill (receive what is left, at the order price). */
+const toLine = (r: any) => ({ order_item_id: r.id, order_id: r.order_id, order_no: r.order_no, product_id: r.product_id, style_th: r.style_th, style_zh: r.style_zh,
+  quantity: r.quantity - r.received_qty, unit_price: r.unit_price, deposit: 0, max: r.quantity - r.received_qty });
+
 export function PackageEdit() {
   const t = useT();
   const { id } = useParams();
@@ -49,15 +53,31 @@ export function PackageEdit() {
   const [h, setH] = useState<any>({ customer_id: null, date: today(), supplier_bank_id: null, deposit: 0, code: '' });
   const [lines, setLines] = useState<any[]>([]); // chosen lines
   const [orderFilter, setOrderFilter] = useState('');
+  const [sp] = useSearchParams();
+  const fromOrder = id ? null : sp.get('order_id');
+  const [prefilled, setPrefilled] = useState<any>(null); // the order this new bill was started from
   useEffect(() => {
     if (id) {
       api(`/packages/${id}`).then((k) => { setH(k); setLines(k.items.map((i: any) => ({ ...i, max: i.ordered_qty }))); });
-    } else api('/packages/next-code').then((r) => setH((x: any) => ({ ...x, code: r.code })));
-  }, [id]);
+      return;
+    }
+    api('/packages/next-code').then((r) => setH((x: any) => ({ ...x, code: r.code })));
+    const cid = sp.get('customer_id');
+    if (cid && !fromOrder) setH((x: any) => ({ ...x, customer_id: Number(cid) }));
+    // Opened from an order: customer, shop bank, deposit and every line not billed yet are filled in.
+    if (fromOrder) api<any>(`/orders/${fromOrder}`).then((o) => {
+      const open = o.items.filter((i: any) => i.quantity - i.received_qty > 0);
+      const firstBill = o.items.every((i: any) => !i.received_qty);
+      setH((x: any) => ({ ...x, customer_id: o.customer_id, supplier_bank_id: o.last_supplier_bank_id ?? x.supplier_bank_id, deposit: firstBill ? o.deposit || 0 : 0 }));
+      setLines(open.map(toLine));
+      setOrderFilter(o.order_no || String(o.id));
+      setPrefilled(o);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, fromOrder]);
   const waiting = useApi<any[]>(h.customer_id ? '/packages/waiting' : null, { customer_id: h.customer_id, order_id: orderFilter });
   const chosenIds = new Set(lines.map((l) => l.order_item_id));
-  const add = (r: any) => setLines([...lines, { order_item_id: r.id, order_id: r.order_id, order_no: r.order_no, product_id: r.product_id, style_th: r.style_th, style_zh: r.style_zh,
-    quantity: r.quantity - r.received_qty, unit_price: r.unit_price, deposit: 0, max: r.quantity - r.received_qty }]);
+  const add = (r: any) => setLines([...lines, toLine(r)]);
   const upd = (oid: number, patch: any) => setLines((xs) => xs.map((x) => (x.order_item_id === oid ? { ...x, ...patch } : x)));
   const total = lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
   const deposits = lines.reduce((s, l) => s + Number(l.deposit || 0), 0) + Number(h.deposit || 0);
@@ -69,10 +89,17 @@ export function PackageEdit() {
   return (
     <Page back={id ? `/packages/${id}` : '/orders?tab=bills'} title={id ? `${t('Bill', 'บิล', '划款单')} ${h.code}` : t('New supplier bill / receive goods', 'เปิดบิลโอนใหม่ / รับของ', '开划款单 / 收货')}
       actions={<button className="primary" disabled={busy || !lines.length} onClick={save}>{t('Save bill', 'บันทึก', '保存')}</button>}>
+      {prefilled && (
+        <div className="note info"><Bi>
+          {t(`Filled in from order ${prefilled.order_no || '#' + prefilled.id}: customer, every line not billed yet${prefilled.supplier_name ? ', shop bank used last time' : ''}. Check quantities and prices before saving.`,
+            `เติมข้อมูลจากออเดอร์ ${prefilled.order_no || '#' + prefilled.id} ให้แล้ว: ลูกค้า, ทุกรายการที่ยังไม่เปิดบิล${prefilled.supplier_name ? ', บัญชีร้านที่เคยโอนครั้งล่าสุด' : ''} ตรวจจำนวนและราคาก่อนบันทึก`,
+            `已按订单 ${prefilled.order_no || '#' + prefilled.id} 填写：客户、未开单的项目${prefilled.supplier_name ? '、上次的卖家银行' : ''}。保存前请核对数量和价格。`)}
+        </Bi></div>
+      )}
       <Card>
         <Grid cols={4}>
           <Field label={t('Customer', 'ลูกค้า', '客户') + ' *'}>
-            {id ? <input value={h.customer_code || ''} disabled /> : <CustomerPick value={h.customer_id} onChange={(v) => { setH({ ...h, customer_id: v }); setLines([]); }} placeholder={t('Choose customer', 'เลือกลูกค้า', '选择客户')} autoFocus />}
+            {id ? <input value={h.customer_code || ''} disabled /> : <CustomerPick value={h.customer_id} onChange={(v) => { setH({ ...h, customer_id: v }); setLines([]); setPrefilled(null); }} placeholder={t('Choose customer', 'เลือกลูกค้า', '选择客户')} autoFocus={!fromOrder} />}
           </Field>
           <Field label={t('Payment invoice no. (auto)', 'เลขที่ใบโอนเงิน (รันอัตโนมัติ)', '划款单号')} hint={t('Product order numbers come from the orders below', 'เลขออเดอร์สินค้าดูจากรายการด้านล่าง', '订单号见下方')}><input value={h.code || ''} disabled={!!id} onChange={(e) => setH({ ...h, code: e.target.value })} /></Field>
           <Field label={t('Date received', 'วันที่รับของ', '收货日期')}><input type="date" value={h.date} onChange={(e) => setH({ ...h, date: e.target.value })} /></Field>

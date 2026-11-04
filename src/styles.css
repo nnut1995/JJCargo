@@ -411,3 +411,7 @@ kbd.on-primary { background: rgba(255,255,255,0.18); color: inherit; border-colo
 .search-input { position: relative; }
 .search-input svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
 .search-input input { width: 100%; padding-left: 34px; }
+
+/* Short notice above a form (e.g. "filled in from order ...") */
+.note { padding: 10px 14px; border-radius: 7px; margin-bottom: 16px; font-size: 13px; }
+.note.info { background: var(--info-soft); color: var(--text); }
