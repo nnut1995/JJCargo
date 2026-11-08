@@ -117,8 +117,15 @@ export function Shipments() {
         { key: 'date', label: t('Date', 'วันที่', '日期') },
         { key: 'packing_count', label: t('Boxes', 'กระสอบ', '包'), align: 'right', sum: true },
         { key: 'total_weight', label: 'kg', money: true, sum: true },
-        { key: 'status', label: t('Status', 'สถานะ', '状态'), render: (r) => <span className="row" onClick={(e) => e.stopPropagation()}>
-          <StatusBadge status={r.status} date={r.status_date} />{canEdit && <button className="link" onClick={() => setSt(r)}>{t('Update', 'อัปเดต', '更新')}</button>}</span> },
+        { key: 'status', label: t('Status', 'สถานะ', '状态'), render: (r) => !canEdit ? <StatusBadge status={r.status} date={r.status_date} /> : <span className="row" onClick={(e) => e.stopPropagation()}>
+          {/* pick a status straight from the list (dated today); the history link opens the full dialog for another date or a note */}
+          <select style={{ width: 240 }} value={r.status || ''} aria-label={t('Status', 'สถานะ', '状态')}
+            onChange={async (e) => { if (e.target.value && await run(() => api(`/shipments/${r.id}/status`, { body: { status: e.target.value, date: today(), note: '' } }), t('Status updated', 'อัปเดตสถานะแล้ว', '已更新'))) reload(); }}>
+            {!r.status && <option value="">{t('Packing', 'กำลังรวมของ', '集货中')}</option>}
+            {SHIPMENT_STATUSES.map((x, i) => <option key={x.key} value={x.key}>{i + 1}. {pick(x, lang)}</option>)}
+          </select>
+          {r.status_date && <span className="muted">{r.status_date}</span>}
+          <button className="link" onClick={() => setSt(r)}>{t('History', 'ประวัติ', '历史')}</button></span> },
         { key: 'arrived_date', label: t('Arrival in Thailand', 'วันที่ถึงไทย', '到达日期'), render: (r) => <span className="row" onClick={(e) => e.stopPropagation()}>
           {canEdit && <input type="date" style={{ width: 150 }} value={r.arrived_date || ''} aria-label={t('Arrival date', 'วันที่ถึงไทย', '到达日期')}
             onChange={async (e) => { if (await run(() => api(`/shipments/${r.id}/arrived`, { body: { date: e.target.value } }), false)) reload(); }} />}
