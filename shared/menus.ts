@@ -36,11 +36,11 @@ export const MENU: MenuGroup[] = [
   {
     key: 'packing', th: 'แพคของ / ขนส่ง', zh: '打包 / 发货', en: 'Packing & shipping',
     items: [
-      { key: 'packing.new', path: '/packing/new', th: 'แพคของ + ชั่งน้ำหนัก', zh: '打包+称重', en: 'Pack & weigh' },
-      { key: 'packing.nobill', path: '/packing/nobill', th: 'รับของไม่มีบิล', zh: '没有订单收货', en: 'Receive without bill' },
+      { key: 'packing.search', path: '/packing', th: 'แพคของ / PackingList', zh: '打包 / PackingList', en: 'Packing list' },
+      { key: 'packing.new', path: '/packing/new', th: 'แพคของ + ชั่งน้ำหนัก', zh: '打包+称重', en: 'Pack & weigh', navAs: 'packing.search' },
+      { key: 'packing.nobill', path: '/packing/nobill', th: 'รับของไม่มีบิล', zh: '没有订单收货', en: 'Receive without bill', navAs: 'packing.search' },
       { key: 'packing.weigh', path: '/packing/weigh', th: 'ชั่งน้ำหนัก / วัดขนาดทีหลัง', zh: '补录重量尺寸', en: 'Weigh boxes later' },
-      { key: 'packing.bulk', path: '/packing/import', th: 'แพคจากไฟล์', zh: '从文件打包', en: 'Pack from file' },
-      { key: 'packing.search', path: '/packing', th: 'ค้นหา PackingList', zh: '搜索 PackingList', en: 'Search packing list' },
+      { key: 'packing.bulk', path: '/packing/import', th: 'แพคจากไฟล์', zh: '从文件打包', en: 'Pack from file', navAs: 'packing.search' },
       { key: 'shipment.list', path: '/shipments', th: 'รอบขนส่ง', zh: '发货运单', en: 'Shipment rounds' },
       { key: 'packing.offchina', path: '/shipments/load', th: 'ขึ้นตู้เมืองจีน', zh: '上车', en: 'Load container (off China)' },
       { key: 'shipment.summary', path: '/shipments/summary', th: 'สรุปยอดค่าขนส่ง', zh: '运费汇总', en: 'Shipping cost summary' },

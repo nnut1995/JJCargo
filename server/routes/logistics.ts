@@ -85,7 +85,7 @@ export function logisticsRouter() {
     if (q.style_id) { w.push('EXISTS (SELECT 1 FROM packing_styles st WHERE st.packing_id = p.id AND st.style_id = ?)'); p.push(q.style_id); }
     return { where: w.join(' AND '), params: p };
   }
-  r.get('/packing', needMenu('packing.search', 'packing.offchina', 'packing.weigh'), (req, res) => {
+  r.get('/packing', needMenu('packing.search', 'packing.offchina', 'packing.weigh', 'packing.new', 'packing.nobill', 'packing.bulk'), (req, res) => {
     const f = packingFilter(req.query);
     const rows = all<any>(`${PACKING_SELECT} WHERE ${f.where} ORDER BY p.id DESC LIMIT 2000`, f.params);
     res.json(rows.map((x) => ({ ...x, cbm: round2(cubicMeters(x) * 1000) / 1000 })));

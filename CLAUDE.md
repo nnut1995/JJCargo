@@ -85,6 +85,8 @@ scripts/flow.ts        full business flow through the API with assertions (used 
 - New screen: also give its menu key an icon in `ITEM_ICON` (src/nav.tsx). Detail pages pass `back="/list-path"` to `<Page>`.
 - A menu item with `navAs: '<key>'` keeps its own permission but has no sidebar entry; it lights up the `<key>` screen instead.
   Orders: `/orders` (`OrdersHub`) holds the order list and supplier bills as tabs with one search box; `/packages` and `/lookup` redirect there.
+  Packing: `/packing` (`PackingList`) is the box list with filters; *Pack & weigh*, *Receive without bill* and *Pack from file* open as dialogs
+  (`?open=new|nobill|file`, `&order=` prefills the order no.); `/packing/new`, `/packing/nobill`, `/packing/import` redirect there.
 
 ## Conventions
 - All route handlers are synchronous (node:sqlite is sync) and throw `HttpError(status, message)`; messages are bilingual where the user sees them.

@@ -172,8 +172,8 @@ export function Empty({ children }: { children?: ReactNode }) {
   return <div className="empty"><Inbox size={22} aria-hidden /><div>{bi(children || t('No data', 'ไม่มีข้อมูล', '没有数据'))}</div></div>;
 }
 
-export function Modal({ open, title, onClose, children, wide, small, footer }: {
-  open: boolean; title: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean; small?: boolean; footer?: ReactNode;
+export function Modal({ open, title, onClose, children, wide, xl, small, footer }: {
+  open: boolean; title: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean; xl?: boolean; small?: boolean; footer?: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -201,7 +201,7 @@ export function Modal({ open, title, onClose, children, wide, small, footer }: {
   if (!open) return null;
   return (
     <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} tabIndex={-1} className={`modal${wide ? ' wide' : ''}${small ? ' small' : ''}`} role="dialog" aria-modal="true">
+      <div ref={ref} tabIndex={-1} className={`modal${wide ? ' wide' : ''}${xl ? ' xl' : ''}${small ? ' small' : ''}`} role="dialog" aria-modal="true">
         <div className="modal-head"><h2>{bi(title)}</h2><button className="icon" onClick={onClose} aria-label="Close"><X size={20} /></button></div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
