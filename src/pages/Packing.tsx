@@ -21,7 +21,7 @@ export function LabelDoc({ packings }: { packings: any[] }) {
           <div className="meta">
             <span>{p.weight ? `${p.weight} kg` : '— kg'}</span>
             <span>{p.cubic1}×{p.cubic2}×{p.cubic3} cm</span>
-            <span><b>{cbmText(p)} คิว</b></span>
+            <span><b>{cbmText(p)} cbm</b></span>
             <span>{p.ctn ? `CTN ${p.ctn}/${p.no ?? ''}` : ''}</span>
           </div>
           <div style={{ fontSize: 12, marginTop: 4 }}>

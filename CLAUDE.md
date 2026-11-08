@@ -87,6 +87,7 @@ scripts/flow.ts        full business flow through the API with assertions (used 
   Orders: `/orders` (`OrdersHub`) holds the order list and supplier bills as tabs with one search box; `/packages` and `/lookup` redirect there.
   Packing: `/packing` (`PackingList`) is the box list with filters; *Pack & weigh*, *Receive without bill* and *Pack from file* open as dialogs
   (`?open=new|nobill|file`, `&order=` prefills the order no.); `/packing/new`, `/packing/nobill`, `/packing/import` redirect there.
+  Shipments: `/shipments` lists rounds (filters, status, arrived, edit) with *New round* and *Load container* as dialogs (`?open=new|load&round=`); `/shipments/load` redirects there.
 
 ## Conventions
 - All route handlers are synchronous (node:sqlite is sync) and throw `HttpError(status, message)`; messages are bilingual where the user sees them.

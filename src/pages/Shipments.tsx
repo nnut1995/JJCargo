@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { api, useApi, useApp, useLang, useT, money, pick, today, cbm, sum } from '../lib';
-import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, DateRange, Badge, Modal, PrintModal, useAction, useAsk, Empty } from '../ui';
-import { Printer, Check, Plus, X, Pencil } from 'lucide-react';
-import { CrudPage } from './Crud';
+import { useEffect, useRef, useState } from 'react';
+import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
+import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, cbm, sum } from '../lib';
+import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, DateRange, Badge, Modal, PrintModal, useAction, useAsk, useToast, Empty, Bi } from '../ui';
+import { Printer, Check, Plus, X, Pencil, ScanBarcode } from 'lucide-react';
+import { CrudPage, EditModal, type FieldDef } from './Crud';
 import { SHIPMENT_STATUSES } from '../../shared/statuses';
 
 function StatusBadge({ status, date }: { status?: string | null; date?: string | null }) {
@@ -44,46 +44,115 @@ function StatusModal({ s, onClose }: { s: any; onClose: () => void }) {
   );
 }
 
-/** ShipmentForm — shipment rounds (containers / trucks). */
+type RoundDialog = 'load' | 'new';
+
+/** ShipmentForm + OffChinaFrom — shipment rounds (containers / trucks) with loading boxes as a dialog. */
 export function Shipments() {
   const t = useT();
-  const { run } = useAction();
+  const { lang } = useLang();
+  const can = useCan();
+  const { reloadLookups } = useApp();
+  const { run, busy } = useAction();
+  const { ask } = useAsk();
+  const toast = useToast();
+  const [sp, setSp] = useSearchParams();
+  const [q, setQ] = useState<any>({ q: '', from: '', to: '', status: '', arrived: '' });
+  const { data, reload } = useApi<any[]>('/r/shipments', { q: q.q, from: q.from, to: q.to });
   const [st, setSt] = useState<any>(null);
-  const [ver, setVer] = useState(0);
+  const [edit, setEdit] = useState<any>(null);
+  const canEdit = can.menu('shipment.list'), canLoad = can.menu('packing.offchina');
+  const dialog = sp.get('open') as RoundDialog | null;
+  const loadRound = sp.get('round') ? Number(sp.get('round')) : null;
+  const openDialog = (d: RoundDialog | null, round?: number) => setSp((p) => {
+    const n = new URLSearchParams(p);
+    if (d) n.set('open', d); else n.delete('open');
+    if (round) n.set('round', String(round)); else n.delete('round');
+    return n;
+  }, { replace: !d });
+  const after = async () => { await reload(); await reloadLookups(); };
+  const fields: FieldDef[] = [
+    { key: 'code', label: t('Round code', 'รหัสรอบขนส่ง', '出货代码'), required: true },
+    { key: 'date', label: t('Departure date', 'วันที่ออกของ', '出货日期'), type: 'date', required: true, default: today() },
+    { key: 'arrived_date', label: t('Arrived in Thailand', 'วันที่ถึงไทย', '到达日期'), type: 'date' },
+  ];
+  const save = async (v: any) => {
+    if (!v.code || !v.date) { toast(t('Please fill round code and date', 'กรุณาระบุรหัสรอบและวันที่', '请填写'), 'err'); return; }
+    const ok = await run(() => (v.id ? api(`/r/shipments/${v.id}`, { method: 'PUT', body: v }) : api('/r/shipments', { body: v })));
+    if (ok) { setEdit(null); if (dialog === 'new') openDialog(null); await after(); }
+  };
+  const del = async (r: any) => {
+    if (!(await ask(t('Delete this round?', 'ต้องการลบรอบขนส่งนี้?', '你确定要删除吗?'), { danger: true }))) return;
+    if (await run(() => api(`/r/shipments/${r.id}`, { method: 'DELETE' }), t('Deleted', 'ลบแล้ว', '已删除'))) await after();
+  };
+  const rows = (data || []).filter((r) =>
+    (!q.status || (q.status === 'none' ? !r.status : r.status === q.status)) &&
+    (!q.arrived || (q.arrived === '1' ? !!r.arrived_date : !r.arrived_date)));
+  const creating = dialog === 'new' && canEdit;
   return (
-    <>
-    <CrudPage key={ver} resource="shipments" title={t('Shipment rounds', 'รอบขนส่ง', '发货运单')} search dateFilter
-      fields={[
-        { key: 'code', label: t('Round code', 'รหัสรอบขนส่ง', '出货代码'), required: true },
-        { key: 'date', label: t('Departure date', 'วันที่ออกของ', '出货日期'), type: 'date', required: true, default: today() },
-        { key: 'arrived_date', label: t('Arrived in Thailand', 'วันที่ถึงไทย', '到达日期'), type: 'date' },
-      ]}
-      columns={[
-        { key: 'code', label: t('Round', 'รอบ', '发货单') },
+    <Page title={t('Shipment rounds', 'รอบขนส่ง / ขึ้นตู้', '发货运单 / 上车')}
+      actions={<>
+        {canLoad && <button onClick={() => openDialog('load')}><ScanBarcode size={16} aria-hidden /> {t('Load container (scan)', 'ขึ้นตู้เมืองจีน (สแกน)', '上车 (扫描)')}</button>}
+        {canEdit && <button className="primary" onClick={() => openDialog('new')}><Plus size={16} aria-hidden /> {t('New round', 'เพิ่มรอบขนส่ง', '新增发货单')}</button>}
+      </>}>
+      <Card>
+        <Grid cols={5}>
+          <Field label={t('Round code', 'รหัสรอบขนส่ง', '出货代码')}><input value={q.q} onChange={(e) => setQ({ ...q, q: e.target.value })} /></Field>
+          <DateRange from={q.from} to={q.to} onChange={(from, to) => setQ({ ...q, from, to })} />
+          <Field label={t('Status', 'สถานะ', '状态')}>
+            <select value={q.status} onChange={(e) => setQ({ ...q, status: e.target.value })}>
+              <option value="">{t('All', 'ทั้งหมด', '全部')}</option>
+              <option value="none">{t('Packing', 'กำลังรวมของ', '集货中')}</option>
+              {SHIPMENT_STATUSES.map((x, i) => <option key={x.key} value={x.key}>{i + 1}. {pick(x, lang)}</option>)}
+            </select>
+          </Field>
+          <Field label={t('Arrived in Thailand', 'ถึงไทย', '到达')}>
+            <select value={q.arrived} onChange={(e) => setQ({ ...q, arrived: e.target.value })}>
+              <option value="">{t('All', 'ทั้งหมด', '全部')}</option><option value="0">{t('Not yet', 'ยังไม่ถึง', '未到')}</option><option value="1">{t('Arrived', 'ถึงแล้ว', '已到')}</option>
+            </select>
+          </Field>
+        </Grid>
+      </Card>
+      <Table rows={rows} onRow={canEdit ? (r) => setEdit(r) : undefined} columns={[
+        { key: 'code', label: t('Round', 'รอบ', '发货单'), render: (r) => <b>{r.code}</b> },
         { key: 'date', label: t('Date', 'วันที่', '日期') },
         { key: 'packing_count', label: t('Boxes', 'กระสอบ', '包'), align: 'right', sum: true },
         { key: 'total_weight', label: 'kg', money: true, sum: true },
         { key: 'status', label: t('Status', 'สถานะ', '状态'), render: (r) => <span className="row" onClick={(e) => e.stopPropagation()}>
-          <StatusBadge status={r.status} date={r.status_date} /><button className="link" onClick={() => setSt(r)}>{t('Update', 'อัปเดต', '更新')}</button></span> },
+          <StatusBadge status={r.status} date={r.status_date} />{canEdit && <button className="link" onClick={() => setSt(r)}>{t('Update', 'อัปเดต', '更新')}</button>}</span> },
         { key: 'arrived_date', label: t('Arrived', 'ถึงไทย', '到达'), render: (r) => r.arrived_date ? <Badge tone="good">{r.arrived_date}</Badge>
-          : <button className="link" onClick={async (e) => { e.stopPropagation(); if (await run(() => api(`/shipments/${r.id}/arrived`, { body: { date: today() } }))) setVer((x) => x + 1); }}>{t('Mark arrived today', 'ถึงไทยวันนี้', '今天到达')}</button> },
-        { key: 'rep', label: '', render: (r) => <Link to={`/shipments/${r.id}/report`} onClick={(e) => e.stopPropagation()}>{t('Packing list', 'รายงาน', '报告')}</Link> },
-      ]} />
-    {st && <StatusModal s={st} onClose={() => { setSt(null); setVer((x) => x + 1); }} />}
-    </>
+          : canEdit ? <button className="link" onClick={async (e) => { e.stopPropagation(); if (await run(() => api(`/shipments/${r.id}/arrived`, { body: { date: today() } }))) reload(); }}>{t('Mark arrived today', 'ถึงไทยวันนี้', '今天到达')}</button> : '' },
+        { key: 'x', label: '', render: (r) => <span className="row" onClick={(e) => e.stopPropagation()}>
+          {canLoad && <button className="link" onClick={() => openDialog('load', r.id)}><ScanBarcode size={16} aria-hidden /> {t('Load', 'ขึ้นตู้', '上车')}</button>}
+          <Link to={`/shipments/${r.id}/report`}>{t('Packing list', 'รายงาน', '报告')}</Link>
+          {canEdit && <button className="link" onClick={() => setEdit(r)}><Pencil size={14} aria-hidden /><span className="sr-only">Edit</span></button>}
+          {canEdit && !r.packing_count && <button className="link danger" onClick={() => del(r)}>{t('Delete', 'ลบ', '删除')}</button>}
+        </span> },
+      ]} empty={t('No rounds', 'ไม่มีรอบขนส่ง', '没有')} />
+      {st && <StatusModal s={st} onClose={() => { setSt(null); reload(); }} />}
+      {(edit || creating) && <EditModal open title={edit?.id ? `${t('Edit round', 'แก้ไขรอบขนส่ง', '修改发货单')} ${edit.code}` : t('New round', 'เพิ่มรอบขนส่ง', '新增发货单')}
+        fields={fields} value={edit || { date: today() }} busy={busy} onSave={save}
+        onClose={() => { setEdit(null); if (creating) openDialog(null); }} />}
+      {dialog === 'load' && canLoad && <LoadModal round={loadRound} onClose={() => { openDialog(null); reload(); }} />}
+    </Page>
   );
 }
 
+/** Old address /shipments/load opens the load dialog on the rounds screen. */
+export function LoadRedirect() {
+  return <Navigate to="/shipments?open=load" replace />;
+}
+
 /** OffChinaFrom — scan boxes onto a container. */
-export function LoadContainer() {
+function LoadModal({ round, onClose }: { round: number | null; onClose: () => void }) {
   const t = useT();
-  const [sid, setSid] = useState<any>(null);
+  const [sid, setSid] = useState<any>(round);
   const [code, setCode] = useState('');
   const [date, setDate] = useState(today());
   const [last, setLast] = useState<any>(null);
   const loaded = useApi<any[]>(sid ? `/shipments/${sid}/packings` : null);
   const { run } = useAction();
   const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (sid) setTimeout(() => ref.current?.focus(), 0); setLast(null); }, [sid]);
   const scan = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code.trim()) return;
@@ -93,32 +162,29 @@ export function LoadContainer() {
     ref.current?.focus();
   };
   return (
-    <Page title={t('Load container (off China)', 'ขึ้นตู้เมืองจีน', '上车')}>
-      <Card>
-        <Grid cols={3}>
-          <Field label={t('Shipment round', 'รอบขนส่ง', '发货单')}><ShipmentPick value={sid} onChange={setSid} /></Field>
-          <Field label={t('Off-China date', 'วันที่ขึ้นตู้', '上车日期')}><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-          <Field label=" "><Link to="/shipments"><Plus size={16} aria-hidden /> {t('New round', 'เพิ่มรอบขนส่ง', '新增发货单')}</Link></Field>
-        </Grid>
-        {sid && (
-          <form onSubmit={scan} style={{ marginTop: 12 }}>
-            <input ref={ref} className="scan" autoFocus value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('Scan or type box code (PK…) and press Enter', 'สแกนเลขกระสอบแล้วกด Enter', '扫描包号')} />
-          </form>
-        )}
-        {last && <p><Badge tone="good"><Check size={12} aria-hidden /> {last.packing_code}</Badge> {last.customer_code} · {last.weight} kg · CTN {last.ctn}/{last.no}</p>}
-      </Card>
-      {sid && (
-        <Card title={`${t('On this round', 'ในรอบนี้', '本发货单')} · ${loaded.data?.length || 0} ${t('boxes', 'กระสอบ', '包')} · ${money(sum(loaded.data, 'weight'))} kg`}>
-          <Table rows={loaded.data} columns={[
-            { key: 'ctn', label: 'CTN', align: 'right' }, { key: 'no', label: 'No', align: 'right' },
-            { key: 'packing_code', label: t('Box', 'เลขกระสอบ', '包号') }, { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
-            { key: 'weight', label: 'kg', money: true, sum: true }, { key: 'dims', label: 'cm', render: (r) => `${r.cubic1}×${r.cubic2}×${r.cubic3}` },
-            { key: 'off_china_date', label: t('Loaded', 'ขึ้นตู้', '上车') },
-            { key: 'x', label: '', render: (r) => <button className="link danger" onClick={async () => { if (await run(() => api(`/shipments/${sid}/unload`, { body: { packing_id: r.id } }))) loaded.reload(); }}>{t('Unload', 'เอาออก', '卸下')}</button> },
-          ]} />
-        </Card>
-      )}
-    </Page>
+    <Modal open xl onClose={onClose} title={t('Load container (off China)', 'ขึ้นตู้เมืองจีน', '上车')}
+      footer={<button onClick={onClose}>{t('Close', 'ปิด', '关闭')}</button>}>
+      <Grid cols={3}>
+        <Field label={t('Shipment round', 'รอบขนส่ง', '发货单')}><ShipmentPick value={sid} onChange={setSid} /></Field>
+        <Field label={t('Off-China date', 'วันที่ขึ้นตู้', '上车日期')}><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+      </Grid>
+      {sid ? (
+        <form onSubmit={scan} style={{ marginTop: 12 }}>
+          <input ref={ref} className="scan" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('Scan or type box code (PK…) and press Enter', 'สแกนเลขกระสอบแล้วกด Enter', '扫描包号')} />
+        </form>
+      ) : <p className="muted">{t('Choose a round first', 'เลือกรอบขนส่งก่อน แล้วสแกนเลขกระสอบ', '先选择发货单')}</p>}
+      {last && <p><Badge tone="good"><Check size={12} aria-hidden /> {last.packing_code}</Badge> {last.customer_code} · {last.weight} kg · CTN {last.ctn}/{last.no}</p>}
+      {sid && <>
+        <h3><Bi>{`${t('On this round', 'ในรอบนี้', '本发货单')} · ${loaded.data?.length || 0} ${t('boxes', 'กระสอบ', '包')} · ${money(sum(loaded.data, 'weight'))} kg`}</Bi></h3>
+        <Table rows={loaded.data} maxHeight={380} columns={[
+          { key: 'ctn', label: 'CTN', align: 'right' }, { key: 'no', label: 'No', align: 'right' },
+          { key: 'packing_code', label: t('Box', 'เลขกระสอบ', '包号') }, { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
+          { key: 'weight', label: 'kg', money: true, sum: true }, { key: 'dims', label: 'cm', render: (r) => `${r.cubic1}×${r.cubic2}×${r.cubic3}` },
+          { key: 'off_china_date', label: t('Loaded', 'ขึ้นตู้', '上车') },
+          { key: 'x', label: '', render: (r) => <button className="link danger" onClick={async () => { if (await run(() => api(`/shipments/${sid}/unload`, { body: { packing_id: r.id } }))) loaded.reload(); }}>{t('Unload', 'เอาออก', '卸下')}</button> },
+        ]} />
+      </>}
+    </Modal>
   );
 }
 
