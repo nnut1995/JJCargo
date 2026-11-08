@@ -247,8 +247,16 @@ export function logisticsRouter() {
     const s = get<any>('SELECT * FROM shipments WHERE id = ?', [sid]);
     if (!s) throw new HttpError(404, 'Shipment not found');
     const code = String(req.body.code || '').trim();
-    const p = get<any>('SELECT * FROM packings WHERE packing_code = ? OR CAST(id AS TEXT) = ?', [code, code]);
-    if (!p) throw new HttpError(404, `找不到这个包号 / ${code} not found`);
+    // accepts the box code (PK…), a tracking no., or the CTN number of a box already on this round
+    let p = get<any>('SELECT * FROM packings WHERE packing_code = ? COLLATE NOCASE', [code]);
+    if (!p) {
+      const byTracking = all<any>(`SELECT * FROM packings p WHERE p.tracking_no = ? OR EXISTS
+        (SELECT 1 FROM packing_items i WHERE i.packing_id = p.id AND i.tracking_no = ?)`, [code, code]);
+      if (byTracking.length > 1) throw new HttpError(409, `เลขแทรคนี้มีหลายกล่อง กรุณาสแกนเลขกล่อง / 这个单号有多个包: ${byTracking.map((x) => x.packing_code).join(', ')}`);
+      p = byTracking[0];
+    }
+    if (!p && /^\d+$/.test(code)) p = get<any>('SELECT * FROM packings WHERE shipment_id = ? AND ctn = ?', [sid, Number(code)]);
+    if (!p) throw new HttpError(404, `ไม่พบเลขกล่อง / 找不到这个包号: ${code}`);
     if (p.shipment_id && p.shipment_id !== sid && p.off_china_date) throw new HttpError(409, `${p.packing_code} is already loaded on another shipment`);
     const ctn = req.body.ctn ?? (get<any>('SELECT COALESCE(MAX(ctn),0) AS m FROM packings WHERE shipment_id = ?', [sid]).m + 1);
     const no = req.body.no ?? (get<any>('SELECT COUNT(*) AS n FROM packings WHERE shipment_id = ? AND customer_id = ?', [sid, p.customer_id]).n + (p.shipment_id === sid ? 0 : 1));
@@ -285,8 +293,10 @@ export function logisticsRouter() {
     res.json(all('SELECT * FROM shipment_status_log WHERE shipment_id = ? ORDER BY date DESC, id DESC', [req.params.id]));
   });
   r.post('/shipments/:id/arrived', needMenu('shipment.list'), (req, res) => {
-    run('UPDATE shipments SET arrived_date = ? WHERE id = ?', [req.body.date || today(), req.params.id]);
-    void notifyStatus('arrived', { shipment_id: Number(req.params.id) });
+    // the date may be in the future (expected arrival); empty clears it. Only notify once it has arrived.
+    const date = req.body.date === '' ? null : (req.body.date || today());
+    run('UPDATE shipments SET arrived_date = ? WHERE id = ?', [date, req.params.id]);
+    if (date && date <= today()) void notifyStatus('arrived', { shipment_id: Number(req.params.id) });
     res.json({ ok: true });
   });
   // Packing-list report by product category (ViewPackingListReport)

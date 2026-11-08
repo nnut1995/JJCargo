@@ -113,6 +113,12 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   for (const p of [pk1.created[0], ...nb.created, imp.created[0]]) await call(`/shipments/${ship.id}/load`, { body: { code: p.code, date: d } });
   const loaded = await call(`/shipments/${ship.id}/packings`);
   assert.equal(loaded.length, 4);
+  // the scan box also takes the CTN number of a box on this round, and a tracking no.
+  const byCtn = await call(`/shipments/${ship.id}/load`, { body: { code: String(loaded[0].ctn), date: d } });
+  assert.equal(byCtn.id, loaded[0].id);
+  const tracked = loaded.find((x: any) => x.tracking_no);
+  if (tracked) assert.equal((await call(`/shipments/${ship.id}/load`, { body: { code: tracked.tracking_no, date: d } })).id, tracked.id);
+  assert.equal((await call(`/shipments/${ship.id}/packings`)).length, 4);
   const sum = await call(`/shipments/${ship.id}/summary`);
   const sa = sum.find((x: any) => x.id === a.id);
   // M4-001 mix: 12.5kg*30=375 vs 0.06m3*5000=300 → 375

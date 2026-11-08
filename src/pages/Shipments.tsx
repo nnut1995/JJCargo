@@ -86,7 +86,7 @@ export function Shipments() {
   };
   const rows = (data || []).filter((r) =>
     (!q.status || (q.status === 'none' ? !r.status : r.status === q.status)) &&
-    (!q.arrived || (q.arrived === '1' ? !!r.arrived_date : !r.arrived_date)));
+    (!q.arrived || (q.arrived === '1') === (!!r.arrived_date && r.arrived_date <= today())));
   const creating = dialog === 'new' && canEdit;
   return (
     <Page title={t('Shipment rounds', 'รอบขนส่ง / ขึ้นตู้', '发货运单 / 上车')}
@@ -119,8 +119,13 @@ export function Shipments() {
         { key: 'total_weight', label: 'kg', money: true, sum: true },
         { key: 'status', label: t('Status', 'สถานะ', '状态'), render: (r) => <span className="row" onClick={(e) => e.stopPropagation()}>
           <StatusBadge status={r.status} date={r.status_date} />{canEdit && <button className="link" onClick={() => setSt(r)}>{t('Update', 'อัปเดต', '更新')}</button>}</span> },
-        { key: 'arrived_date', label: t('Arrived', 'ถึงไทย', '到达'), render: (r) => r.arrived_date ? <Badge tone="good">{r.arrived_date}</Badge>
-          : canEdit ? <button className="link" onClick={async (e) => { e.stopPropagation(); if (await run(() => api(`/shipments/${r.id}/arrived`, { body: { date: today() } }))) reload(); }}>{t('Mark arrived today', 'ถึงไทยวันนี้', '今天到达')}</button> : '' },
+        { key: 'arrived_date', label: t('Arrival in Thailand', 'วันที่ถึงไทย', '到达日期'), render: (r) => <span className="row" onClick={(e) => e.stopPropagation()}>
+          {canEdit && <input type="date" style={{ width: 150 }} value={r.arrived_date || ''} aria-label={t('Arrival date', 'วันที่ถึงไทย', '到达日期')}
+            onChange={async (e) => { if (await run(() => api(`/shipments/${r.id}/arrived`, { body: { date: e.target.value } }), false)) reload(); }} />}
+          {r.arrived_date && (r.arrived_date <= today()
+            ? <Badge tone="good">{t('Arrived', 'ถึงแล้ว', '已到')}{canEdit ? '' : ` ${r.arrived_date}`}</Badge>
+            : <Badge tone="info">{t('Expected', 'กำหนดถึง', '预计')}{canEdit ? '' : ` ${r.arrived_date}`}</Badge>)}
+        </span> },
         { key: 'x', label: '', render: (r) => <span className="row" onClick={(e) => e.stopPropagation()}>
           {canLoad && <button className="link" onClick={() => openDialog('load', r.id)}><ScanBarcode size={16} aria-hidden /> {t('Load', 'ขึ้นตู้', '上车')}</button>}
           <Link to={`/shipments/${r.id}/report`}>{t('Packing list', 'รายงาน', '报告')}</Link>
@@ -170,7 +175,7 @@ function LoadModal({ round, onClose }: { round: number | null; onClose: () => vo
       </Grid>
       {sid ? (
         <form onSubmit={scan} style={{ marginTop: 12 }}>
-          <input ref={ref} className="scan" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('Scan or type box code (PK…) and press Enter', 'สแกนเลขกระสอบแล้วกด Enter', '扫描包号')} />
+          <input ref={ref} className="scan" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('Scan box code (PK…), tracking no. or CTN, then Enter', 'สแกนเลขกระสอบ (PK…) / เลขแทรค / เลข CTN แล้วกด Enter', '扫描包号 / 单号 / CTN')} />
         </form>
       ) : <p className="muted">{t('Choose a round first', 'เลือกรอบขนส่งก่อน แล้วสแกนเลขกระสอบ', '先选择发货单')}</p>}
       {last && <p><Badge tone="good"><Check size={12} aria-hidden /> {last.packing_code}</Badge> {last.customer_code} · {last.weight} kg · CTN {last.ctn}/{last.no}</p>}
