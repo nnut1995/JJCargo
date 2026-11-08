@@ -230,7 +230,10 @@ export function PackWeigh() {
   const set = (id: number, k: string, v: string) => setEdits((e) => ({ ...e, [id]: { ...e[id], [k]: v } }));
   const save = async () => {
     const body = { rows: Object.entries(edits).map(([id, v]) => ({ id: Number(id), ...v })) };
-    if (await run(() => api('/packing/measure', { body }))) { setEdits({}); reload(); }
+    if (!await run(() => api('/packing/measure', { body }))) return;
+    setEdits({}); reload();
+    // labels for the boxes just weighed, so the new kg / size can go on the box straight away
+    setPrint(await Promise.all(body.rows.map((r) => api(`/packing/${r.id}`))));
   };
   // Enter jumps to the same field on the next box, like a spreadsheet
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
