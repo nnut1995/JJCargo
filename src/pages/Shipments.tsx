@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, cbm, sum } from '../lib';
 import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, DateRange, Badge, Modal, PrintModal, useAction, useAsk, useToast, Empty, Bi } from '../ui';
-import { Printer, Check, Plus, X, Pencil, ScanBarcode } from 'lucide-react';
+import { Printer, Check, Plus, X, Pencil, ScanBarcode, FileSpreadsheet } from 'lucide-react';
+import { downloadXlsx } from '../xlsx';
 import { CrudPage, EditModal, type FieldDef } from './Crud';
 import { SHIPMENT_STATUSES } from '../../shared/statuses';
 
@@ -369,17 +370,53 @@ export function ShipmentReport() {
   const { lang } = useLang();
   const { data } = useApi<any>(`/shipments/${id}/report`);
   if (!data) return null;
+  const none = t('Not specified', 'ไม่ระบุ', '未指定');
+  // one category per sack: the one with the largest quantity in it
+  const catOf = (b: any) => { const c = [...(b.contents || [])].sort((x: any, y: any) => y.qty - x.qty)[0]; return c ? pick(c, lang) || none : none; };
+  const groups = new Map<string, { cat: string; sacks: number; weight: number; cbm: number }>();
+  for (const b of data.boxes) {
+    const cat = catOf(b);
+    const g = groups.get(cat) || { cat, sacks: 0, weight: 0, cbm: 0 };
+    g.sacks++; g.weight += Number(b.weight) || 0; g.cbm += b.cbm || 0;
+    groups.set(cat, g);
+  }
+  const summary = [...groups.values()].sort((a, b) => b.sacks - a.sacks);
+  const plain = (s: string) => s.replace(/[ ⁠]/g, (c) => (c === ' ' ? ' ' : ''));
+  const exportXlsx = () => downloadXlsx(`packing-list-${data.shipment.code}`, [
+    { name: plain(t('Summary', 'สรุป', '汇总')), widths: [28, 12, 12, 12], rows: [
+      [`Packing list ${data.shipment.code}`, data.shipment.date],
+      [],
+      [plain(t('Category', 'ประเภทสินค้า', '产品分类')), plain(t('Sacks', 'กระสอบ', '包')), 'kg', 'm³'],
+      ...summary.map((g) => [plain(g.cat), g.sacks, Math.round(g.weight * 100) / 100, Math.round(g.cbm * 1000) / 1000]),
+      [plain(t('Total', 'รวม', '合计')), data.boxes.length, Math.round(sum(data.boxes, 'weight') * 100) / 100, Math.round(sum(data.boxes, 'cbm') * 1000) / 1000],
+    ] },
+    { name: 'Packing list', widths: [7, 7, 14, 14, 10, 16, 10, 22, 40], rows: [
+      ['CTN', 'No', plain(t('Box', 'เลขกระสอบ', '包号')), plain(t('Customer', 'ลูกค้า', '客户')), 'kg', 'cm', 'm³', plain(t('Category', 'ประเภทสินค้า', '产品分类')), plain(t('Contents', 'สินค้า', '产品'))],
+      ...data.boxes.map((b: any) => [b.ctn, b.no, b.packing_code, b.customer_code, Number(b.weight) || 0, `${b.cubic1}×${b.cubic2}×${b.cubic3}`, Math.round(b.cbm * 10000) / 10000, plain(catOf(b)),
+        plain(b.contents.map((c: any) => `${pick(c, lang) || '?'} ×${c.qty}`).join(', '))]),
+    ] },
+  ]);
   return (
-    <Page back="/shipments" title={`${t('Packing list', 'รายงาน Packing list', '装箱单')} · ${data.shipment.code}`} actions={<button onClick={() => window.print()}><Printer size={16} aria-hidden /> {t('Print', 'ปริ้น', '打印')}</button>}>
+    <Page back="/shipments" title={`${t('Packing list', 'รายงาน Packing list', '装箱单')} · ${data.shipment.code}`} actions={<>
+      <button onClick={exportXlsx}><FileSpreadsheet size={16} aria-hidden /> {t('Export Excel', 'Export Excel', '导出 Excel')}</button>
+      <button onClick={() => window.print()}><Printer size={16} aria-hidden /> {t('Print', 'ปริ้น', '打印')}</button></>}>
       <div className="card print-area doc">
         <h2>Packing list {data.shipment.code} · {data.shipment.date}</h2>
+        <h3>{t('Summary by category', 'สรุปตามประเภทสินค้า', '按产品分类汇总')}</h3>
+        <table style={{ maxWidth: 640, marginBottom: 20 }}>
+          <thead><tr><th>{t('Category', 'ประเภทสินค้า', '产品分类')}</th><th style={{ textAlign: 'right' }}>{t('Sacks', 'กระสอบ', '包')}</th><th style={{ textAlign: 'right' }}>kg</th><th style={{ textAlign: 'right' }}>m³</th></tr></thead>
+          <tbody>{summary.map((g) => (
+            <tr key={g.cat}><td>{g.cat}</td><td style={{ textAlign: 'right' }}>{g.sacks}</td><td style={{ textAlign: 'right' }}>{money(g.weight)}</td><td style={{ textAlign: 'right' }}>{g.cbm.toFixed(3)}</td></tr>
+          ))}</tbody>
+          <tfoot><tr><td>{t('Total', 'รวม', '合计')}</td><td style={{ textAlign: 'right' }}>{data.boxes.length}</td><td style={{ textAlign: 'right' }}>{money(sum(data.boxes, 'weight'))}</td><td style={{ textAlign: 'right' }}>{sum(data.boxes, 'cbm').toFixed(3)}</td></tr></tfoot>
+        </table>
         <table>
-          <thead><tr><th>CTN</th><th>No</th><th>{t('Box', 'เลขกระสอบ', '包号')}</th><th>{t('Customer', 'ลูกค้า', '客户')}</th><th>kg</th><th>cm</th><th>m³</th><th>{t('Contents', 'สินค้า', '产品')}</th></tr></thead>
+          <thead><tr><th>CTN</th><th>No</th><th>{t('Box', 'เลขกระสอบ', '包号')}</th><th>{t('Customer', 'ลูกค้า', '客户')}</th><th>kg</th><th>cm</th><th>m³</th><th>{t('Category', 'ประเภทสินค้า', '产品分类')}</th><th>{t('Contents', 'สินค้า', '产品')}</th></tr></thead>
           <tbody>{data.boxes.map((b: any) => (
             <tr key={b.id}><td>{b.ctn}</td><td>{b.no}</td><td>{b.packing_code}</td><td>{b.customer_code}</td><td>{b.weight}</td><td>{b.cubic1}×{b.cubic2}×{b.cubic3}</td><td>{b.cbm.toFixed(4)}</td>
-              <td>{b.contents.map((c: any) => `${pick(c, lang) || '?'} ×${c.qty}`).join(', ')}</td></tr>
+              <td>{catOf(b)}</td><td>{b.contents.map((c: any) => `${pick(c, lang) || '?'} ×${c.qty}`).join(', ')}</td></tr>
           ))}</tbody>
-          <tfoot><tr><td colSpan={4}>{data.boxes.length} {t('boxes', 'กระสอบ', '包')}</td><td>{money(sum(data.boxes, 'weight'))}</td><td /><td>{sum(data.boxes, 'cbm').toFixed(3)}</td><td /></tr></tfoot>
+          <tfoot><tr><td colSpan={4}>{data.boxes.length} {t('boxes', 'กระสอบ', '包')}</td><td>{money(sum(data.boxes, 'weight'))}</td><td /><td>{sum(data.boxes, 'cbm').toFixed(3)}</td><td colSpan={2} /></tr></tfoot>
         </table>
       </div>
     </Page>
