@@ -338,7 +338,9 @@ export function Combo<T>({ items, value, onChange, getLabel, getId = (x: any) =>
   return (
     <div className="combo" ref={boxRef}>
       <input id={id} value={text} placeholder={placeholder} autoFocus={autoFocus} role="combobox" aria-expanded={open} autoComplete="off"
-        onFocus={(e) => { setOpen(true); e.target.select(); }}
+        // the list opens on click, typing or ↓, not on focus, so auto-focused pickers (dialogs) don't pop open by themselves
+        onFocus={(e) => e.target.select()}
+        onMouseDown={() => setOpen(true)}
         onBlur={() => setTimeout(() => { setOpen(false); if (!text && allowEmpty) choose(undefined); else setText(current ? getLabel(current) : ''); }, 150)}
         onChange={(e) => { setText(e.target.value); setOpen(true); setHi(0); }}
         onKeyDown={(e) => {

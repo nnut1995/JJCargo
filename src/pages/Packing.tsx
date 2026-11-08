@@ -219,7 +219,7 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
 /** ชั่งน้ำหนัก / วัดขนาดทีหลัง — fill weight and size for many boxes in one grid. */
 export function PackWeigh() {
   const t = useT();
-  const [q, setQ] = useState<any>({ unmeasured: '1', sent: '0' });
+  const [q, setQ] = useState<any>({ unmeasured: '1', sent: '0', sort: 'old' }); // oldest first: weigh what has waited longest
   const { data, reload } = useApi<any[]>('/packing', q);
   const [edits, setEdits] = useState<Record<number, any>>({});
   const [sel, setSel] = useState<Set<any>>(new Set());

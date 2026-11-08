@@ -87,7 +87,7 @@ export function logisticsRouter() {
   }
   r.get('/packing', needMenu('packing.search', 'packing.offchina', 'packing.weigh', 'packing.new', 'packing.nobill', 'packing.bulk'), (req, res) => {
     const f = packingFilter(req.query);
-    const rows = all<any>(`${PACKING_SELECT} WHERE ${f.where} ORDER BY p.id DESC LIMIT 2000`, f.params);
+    const rows = all<any>(`${PACKING_SELECT} WHERE ${f.where} ORDER BY p.id ${req.query.sort === 'old' ? 'ASC' : 'DESC'} LIMIT 2000`, f.params);
     res.json(rows.map((x) => ({ ...x, cbm: round2(cubicMeters(x) * 1000) / 1000 })));
   });
   // one line per customer for the packing-list overview (click through to the boxes)
