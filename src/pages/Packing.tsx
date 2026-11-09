@@ -224,8 +224,15 @@ export function PackWeigh() {
   const [edits, setEdits] = useState<Record<number, any>>({});
   const [sel, setSel] = useState<Set<any>>(new Set());
   const [print, setPrint] = useState<any[] | null>(null);
+  const [bulk, setBulk] = useState<any>({ weight: '', cubic1: '', cubic2: '', cubic3: '' });
   const { run, busy } = useAction();
   const rows = (data || []).map((r) => ({ ...r, ...edits[r.id] }));
+  // bulk: copy the filled-in fields to every ticked box (saved together with the normal Save)
+  const bulkFields = Object.entries(bulk).filter(([, v]) => v !== '' && v !== null);
+  const applyBulk = () => {
+    if (!sel.size || !bulkFields.length) return;
+    setEdits((e) => { const n = { ...e }; sel.forEach((id) => { n[id] = { ...n[id], ...Object.fromEntries(bulkFields) }; }); return n; });
+  };
   const dirty = Object.keys(edits).length;
   const set = (id: number, k: string, v: string) => setEdits((e) => ({ ...e, [id]: { ...e[id], [k]: v } }));
   const save = async () => {
@@ -262,7 +269,15 @@ export function PackWeigh() {
             </select>
           </Field>
         </Grid>
-        <p className="muted" style={{ marginBottom: 0 }}>{t('Type the numbers and press Enter to move down. Press Save once at the end.', 'พิมพ์ตัวเลขแล้วกด Enter เพื่อไปช่องถัดไป เสร็จแล้วกดบันทึกครั้งเดียว', '输入后按 Enter 跳到下一格，最后保存')}</p>
+        <div className="row" style={{ marginTop: 12, alignItems: 'flex-end', flexWrap: 'wrap', gap: 8 }}>
+          <b style={{ alignSelf: 'center' }}>{t('Same for ticked boxes', 'ใส่ค่าเดียวกันให้ที่ติ๊ก', '批量填写')}:</b>
+          {(['weight', 'cubic1', 'cubic2', 'cubic3'] as const).map((k) => (
+            <input key={k} type="number" step="any" min={0} style={{ width: 110 }} value={bulk[k]} onChange={(e) => setBulk({ ...bulk, [k]: e.target.value })}
+              placeholder={k === 'weight' ? 'kg' : k === 'cubic1' ? t('W cm', 'กว้าง', '宽') : k === 'cubic2' ? t('L cm', 'ยาว', '长') : t('H cm', 'สูง', '高')} aria-label={k} />
+          ))}
+          <button disabled={!sel.size || !bulkFields.length} onClick={applyBulk}>{t('Apply to ticked', 'ใส่ให้ที่ติ๊ก', '应用到已选')} ({sel.size})</button>
+        </div>
+        <p className="muted" style={{ marginBottom: 0 }}>{t('Type the numbers and press Enter to move down, or tick boxes and fill them all at once above. Press Save once at the end.', 'พิมพ์ตัวเลขแล้วกด Enter เพื่อไปช่องถัดไป หรือติ๊กหลายกล่องแล้วใส่ค่าเดียวกันด้านบน เสร็จแล้วกดบันทึกครั้งเดียว', '输入后按 Enter 跳到下一格，或勾选后批量填写，最后保存')}</p>
       </Card>
       <Table rows={rows} selectable={() => true} selected={sel} onSelect={setSel} rowClass={(r) => (edits[r.id] ? 'on' : '')} columns={[
         { key: 'packing_code', label: t('Box', 'เลขกล่อง', '包号') },
