@@ -159,7 +159,6 @@ export function PackageEdit() {
 export function BillDoc({ k }: { k: any }) {
   const t = useT();
   const { lookups } = useApp();
-  const name = [k.firstname, k.lastname].filter(Boolean).join(' ') + (k.nickname ? ` (${k.nickname})` : '');
   const shops = [...new Set(k.items.map((i: any) => i.supplier_name).filter(Boolean))].join(', ');
   const qty = k.items.reduce((s: number, i: any) => s + Number(i.quantity || 0), 0);
   const L = (_en: string, th: string, zh: string) => <span className="bd-l">{zh}<small>{th}</small></span>;
@@ -171,7 +170,7 @@ export function BillDoc({ k }: { k: any }) {
       </header>
       <div className="bd-head">
         <dl>
-          <div><dt>{L('Customer', 'ลูกค้า', '客户')}</dt><dd><b className="bd-cust">{k.customer_code}</b>{name.trim() && <span className="bd-name">{name}</span>}</dd></div>
+          <div><dt>{L('Customer', 'ลูกค้า', '客户')}</dt><dd><b className="bd-cust">{k.customer_code}</b></dd></div>
           {shops && <div><dt>{L('Shop', 'ร้านค้า', '档口')}</dt><dd>{shops}</dd></div>}
         </dl>
         <dl className="bd-right">
