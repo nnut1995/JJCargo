@@ -96,6 +96,9 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   const pkOrd = await call('/packing', { body: { customer_id: b.id, items: [{ order_item_id: w1[0].id, quantity: 3 }] } });
   assert.equal(pkOrd.packings[0].order_nos, 'TB-778899');
   assert.equal((await call('/orders?id=TB-778899'))[0].packed_qty, 3);
+  // one search box finds a box by order no., box code or tracking
+  assert.ok((await call('/packing?ref=778899')).some((x: any) => x.id === pkOrd.created[0].id));
+  assert.ok((await call(`/packing?ref=${pkOrd.packings[0].packing_code}`)).some((x: any) => x.id === pkOrd.created[0].id));
   const unmeasured = await call(`/packing?unmeasured=1&customer_id=${b.id}`);
   assert.equal(unmeasured.length, 4);
   await call('/packing/measure', { body: { rows: [...rcv.created, pkOrd.created[0]].map((c: any) => ({ id: c.id, weight: 2, cubic1: 10, cubic2: 10, cubic3: 10 })) } });

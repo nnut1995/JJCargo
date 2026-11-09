@@ -263,7 +263,7 @@ export function PackWeigh() {
         <Grid cols={4}>
           <Field label={t('Customer code', 'รหัสลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => setQ({ ...q, customer_id: v })} /></Field>
           <Field label={t('Shipment round', 'รอบขนส่ง', '发货单')}><ShipmentPick value={q.shipment_id} onChange={(v) => setQ({ ...q, shipment_id: v })} placeholder={t('All rounds', '--ทุกรอบขนส่ง--', '所有的发货单')} /></Field>
-          <Field label={t('Box code', 'เลขกล่อง', '包号')}><input value={q.code || ''} onChange={(e) => setQ({ ...q, code: e.target.value })} /></Field>
+          <Field label={t('Order / tracking / box no.', 'เลขออเดอร์ / แทรค / เลขกล่อง', '订单号 / 单号 / 包号')}><input value={q.ref || ''} onChange={(e) => setQ({ ...q, ref: e.target.value })} /></Field>
           <Field label={t('Show', 'แสดง', '显示')}>
             <select value={q.unmeasured} onChange={(e) => setQ({ ...q, unmeasured: e.target.value })}>
               <option value="1">{t('Missing weight or size', 'เฉพาะที่ยังไม่ชั่ง/วัด', '未称重')}</option><option value="">{t('All boxes', 'ทั้งหมด', '全部')}</option>
@@ -368,9 +368,7 @@ export function PackingList() {
         <Grid cols={4}>
           <Field label={t('Customer code', 'รหัสลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => set('customer_id', v)} /></Field>
           <Field label={t('Shipment round', 'รอบขนส่ง', '发货单')}><ShipmentPick value={q.shipment_id} onChange={(v) => set('shipment_id', v)} placeholder={t('All rounds', '--ทุกรอบขนส่ง--', '所有的发货单')} /></Field>
-          <Field label={t('Box code', 'เลขกล่อง', '包号')}><input value={q.code || ''} onChange={(e) => set('code', e.target.value)} /></Field>
-          <Field label={t('Order no.', 'เลขออเดอร์', '订单号')}><input value={q.order_id || ''} onChange={(e) => set('order_id', e.target.value)} /></Field>
-          <Field label={t('Tracking', 'เลขแทรค', '单号')}><input value={q.tracking || ''} onChange={(e) => set('tracking', e.target.value)} /></Field>
+          <Field label={t('Order / tracking / box no.', 'เลขออเดอร์ / แทรค / เลขกล่อง', '订单号 / 单号 / 包号')}><input value={q.ref || ''} onChange={(e) => set('ref', e.target.value)} /></Field>
           <Field label={t('Status', 'สถานะ', '状态')}>
             <select value={q.sent} onChange={(e) => set('sent', e.target.value)}>
               <option value="0">{t('Not loaded yet', 'ยังไม่ขึ้นตู้', '未发货')}</option><option value="1">{t('On container', 'ขึ้นตู้แล้ว', '已发')}</option>

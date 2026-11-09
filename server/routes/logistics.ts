@@ -81,6 +81,11 @@ export function logisticsRouter() {
     if (q.code) { w.push('p.packing_code LIKE ?'); p.push(`%${q.code}%`); }
     if (q.tracking) { w.push('(p.tracking_no LIKE ? OR EXISTS (SELECT 1 FROM packing_items i WHERE i.packing_id = p.id AND i.tracking_no LIKE ?))'); p.push(`%${q.tracking}%`, `%${q.tracking}%`); }
     if (q.order_id) { w.push('EXISTS (SELECT 1 FROM packing_items i JOIN order_items oi ON oi.id = i.order_item_id JOIN orders o ON o.id = oi.order_id WHERE i.packing_id = p.id AND (CAST(oi.order_id AS TEXT) = ? OR o.order_no LIKE ?))'); p.push(q.order_id, `%${q.order_id}%`); }
+    if (q.ref) { // one search box: box code, tracking (box or item) or order no.
+      w.push(`(p.packing_code LIKE ? OR p.tracking_no LIKE ? OR EXISTS (SELECT 1 FROM packing_items i LEFT JOIN order_items oi ON oi.id = i.order_item_id LEFT JOIN orders o ON o.id = oi.order_id
+        WHERE i.packing_id = p.id AND (i.tracking_no LIKE ? OR o.order_no LIKE ? OR CAST(oi.order_id AS TEXT) = ?)))`);
+      const like = `%${String(q.ref).trim()}%`; p.push(like, like, like, like, String(q.ref).trim().replace(/^#/, ''));
+    }
     if (q.unmeasured === '1') w.push('(COALESCE(p.weight,0) = 0 OR COALESCE(p.cubic1,0) * COALESCE(p.cubic2,0) * COALESCE(p.cubic3,0) = 0)');
     if (q.style_id) { w.push('EXISTS (SELECT 1 FROM packing_styles st WHERE st.packing_id = p.id AND st.style_id = ?)'); p.push(q.style_id); }
     return { where: w.join(' AND '), params: p };
