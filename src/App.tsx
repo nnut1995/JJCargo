@@ -6,8 +6,8 @@ import { Shell, LangSwitch } from './nav';
 import Dashboard from './pages/Dashboard';
 import { OrderEdit, OrdersHub } from './pages/Orders';
 import { PackageEdit, PackageView } from './pages/Packages';
-import { PackNew, PackingSearch, PackingImport, PackWeigh } from './pages/Packing';
-import { Shipments, LoadContainer, ShipmentSummary, ShippingCharges, ShipmentReport } from './pages/Shipments';
+import { PackingList, PackingRedirect, PackWeigh } from './pages/Packing';
+import { Shipments, LoadRedirect, ShipmentSummary, ShippingCharges, ShipmentReport } from './pages/Shipments';
 import { Customers, CustomerEdit, Balances } from './pages/Customers';
 import { Payments, CheckPayments } from './pages/Payments';
 import { BankStatements, BankImport, BankTotal, BankAccounts, AccountTransfers } from './pages/Bank';
@@ -78,13 +78,13 @@ export default function App() {
             <Route path="/packages/new" element={<PackageEdit />} />
             <Route path="/packages/:id" element={<PackageView />} />
             <Route path="/packages/:id/edit" element={<PackageEdit />} />
-            <Route path="/packing/new" element={<PackNew mode="order" />} />
-            <Route path="/packing/nobill" element={<PackNew mode="nobill" />} />
-            <Route path="/packing/import" element={<PackingImport />} />
+            <Route path="/packing/new" element={<PackingRedirect open="new" />} />
+            <Route path="/packing/nobill" element={<PackingRedirect open="nobill" />} />
+            <Route path="/packing/import" element={<PackingRedirect open="file" />} />
             <Route path="/packing/weigh" element={<PackWeigh />} />
-            <Route path="/packing" element={<PackingSearch />} />
+            <Route path="/packing" element={<PackingList />} />
             <Route path="/shipments" element={<Shipments />} />
-            <Route path="/shipments/load" element={<LoadContainer />} />
+            <Route path="/shipments/load" element={<LoadRedirect />} />
             <Route path="/shipments/summary" element={<ShipmentSummary />} />
             <Route path="/shipments/search" element={<ShippingCharges />} />
             <Route path="/shipments/:id/report" element={<ShipmentReport />} />

@@ -77,6 +77,12 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   ] } });
   // packing can go up to the ordered qty (20) even though only 15 were billed: 5 left, so 6 is too many
   await call('/packing', { body: { customer_id: a.id, items: [{ order_item_id: o.items[1].id, quantity: 6 }] }, expect: 409 });
+  // box code = PK + running no.; reference id = yyyymm + monthly running no., e.g. 2026110001
+  const ym = `${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  assert.match(pk1.created[0].code, /^PK\d{4,}$/);
+  const ref1 = (await call(`/packing/${pk1.created[0].id}`)).reference_id;
+  assert.match(ref1, new RegExp(`^${ym}\\d{4}$`));
+  assert.ok((await call(`/packing?ref=${ref1}`)).some((x: any) => x.id === pk1.created[0].id));
   const nb = await call('/packing', { body: { customer_id: b.id, weight: 51.12, cubic1: 40, cubic2: 90, cubic3: 90, tracking_no: 'CH83207', boxes: 2, styles: [{ style_id: clothes.id, quantity: 100 }] } });
   assert.equal(nb.created.length, 2);
 
@@ -97,6 +103,20 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   assert.equal(unmeasured.length, 4);
   await call('/packing/measure', { body: { rows: [...rcv.created, pkOrd.created[0]].map((c: any) => ({ id: c.id, weight: 2, cubic1: 10, cubic2: 10, cubic3: 10 })) } });
   assert.equal((await call(`/packing?unmeasured=1&customer_id=${b.id}`)).length, 0);
+  // one search box finds a box by order no., box code or tracking
+  assert.ok((await call('/packing?ref=778899')).some((x: any) => x.id === pkOrd.created[0].id));
+  assert.ok((await call(`/packing?ref=${pkOrd.packings[0].packing_code}`)).some((x: any) => x.id === pkOrd.created[0].id));
+  // transport mode (truck / ship) is saved, filterable and validated
+  await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { transport: 'ship' } });
+  assert.ok((await call('/packing?transport=ship')).some((x: any) => x.id === pkOrd.created[0].id));
+  await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { transport: 'plane' }, expect: 400 });
+  // secondary customers: box shows up under them too, shipping stays with the main customer
+  await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { other_customer_ids: [a.id, b.id] } });
+  const withOther = await call(`/packing/${pkOrd.created[0].id}`);
+  assert.deepEqual(withOther.other_customer_ids, [a.id]); // main customer is never stored as secondary
+  assert.ok((await call(`/packing?customer_id=${a.id}`)).some((x: any) => x.id === pkOrd.created[0].id && x.other_customers === 'M4-001'));
+  await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { other_customer_ids: [] } });
+  assert.ok(!(await call(`/packing?customer_id=${a.id}`)).some((x: any) => x.id === pkOrd.created[0].id));
   const over = await call('/packing/by-customer');
   const ob = over.find((x: any) => x.customer_id === b.id);
   assert.equal(ob.boxes, 6);
@@ -113,6 +133,12 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   for (const p of [pk1.created[0], ...nb.created, imp.created[0]]) await call(`/shipments/${ship.id}/load`, { body: { code: p.code, date: d } });
   const loaded = await call(`/shipments/${ship.id}/packings`);
   assert.equal(loaded.length, 4);
+  // the scan box also takes the CTN number of a box on this round, and a tracking no.
+  const byCtn = await call(`/shipments/${ship.id}/load`, { body: { code: String(loaded[0].ctn), date: d } });
+  assert.equal(byCtn.id, loaded[0].id);
+  const tracked = loaded.find((x: any) => x.tracking_no);
+  if (tracked) assert.equal((await call(`/shipments/${ship.id}/load`, { body: { code: tracked.tracking_no, date: d } })).id, tracked.id);
+  assert.equal((await call(`/shipments/${ship.id}/packings`)).length, 4);
   const sum = await call(`/shipments/${ship.id}/summary`);
   const sa = sum.find((x: any) => x.id === a.id);
   // M4-001 mix: 12.5kg*30=375 vs 0.06m3*5000=300 → 375
