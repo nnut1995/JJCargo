@@ -46,8 +46,8 @@ const R: Record<string, Resource> = {
   },
   supplier_banks: {
     table: 'supplier_banks', menus: ['package.new', 'package.search', 'invoice.payment'],
-    fields: ['bank', 'account_name', 'account_number', 'tel'], required: ['bank', 'account_number'],
-    select: 'SELECT t.* FROM supplier_banks t WHERE t.is_deleted = 0', search: ['bank', 'account_name', 'account_number', 'tel'],
+    fields: ['bank', 'branch', 'account_name', 'account_number', 'tel'], required: ['bank', 'account_number'],
+    select: 'SELECT t.* FROM supplier_banks t WHERE t.is_deleted = 0', search: ['bank', 'branch', 'account_name', 'account_number', 'tel'],
     order: 't.id DESC', softDelete: 'is_deleted',
   },
   shipments: {

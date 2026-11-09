@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, monthStart } from '../lib';
 import { Page, Card, Grid, Field, Table, CustomerPick, DateRange, Badge, Modal, PrintModal, Combo, useAction, useAsk, Bi } from '../ui';
-import { Printer, Plus, X } from 'lucide-react';
+import { Pencil, Printer, Plus, X } from 'lucide-react';
 import { SearchBox } from './Orders';
 
 function SupplierBankPick({ value, onChange }: { value: any; onChange: (v: any) => void }) {
@@ -16,19 +16,21 @@ function SupplierBankPick({ value, onChange }: { value: any; onChange: (v: any) 
         <Combo items={lookups.supplierBanks} value={value} onChange={onChange} placeholder={t('Search supplier bank', 'ค้นหาธนาคาร', '找一家银行')}
           getLabel={(b) => `${b.bank} · ${b.account_name || ''} · ${b.account_number || ''}`} />
       </div>
+      {value && <button type="button" onClick={() => setAdd({ ...lookups.supplierBanks.find((b) => b.id === Number(value)) })}><Pencil size={16} aria-hidden /><span className="sr-only">{t('Edit supplier bank', 'แก้ไขบัญชีร้านค้า', '修改卖家银行')}</span></button>}
       <button type="button" onClick={() => setAdd({ bank: 'ICBC 工行' })}>+</button>
       {add && (
-        <Modal open title={t('Add supplier bank', 'เพิ่มบัญชีร้านค้า', '新增卖家银行')} onClose={() => setAdd(null)}
+        <Modal open title={add.id ? t('Edit supplier bank', 'แก้ไขบัญชีร้านค้า', '修改卖家银行') : t('Add supplier bank', 'เพิ่มบัญชีร้านค้า', '新增卖家银行')} onClose={() => setAdd(null)}
           footer={<button className="primary" onClick={async () => {
-            const r = await run(() => api('/r/supplier_banks', { body: add }));
-            if (r) { await reloadLookups(); onChange((r as any).id); setAdd(null); }
+            const r = await run(() => (add.id ? api(`/r/supplier_banks/${add.id}`, { method: 'PUT', body: add }) : api('/r/supplier_banks', { body: add })));
+            if (r) { await reloadLookups(); onChange(add.id || (r as any).id); setAdd(null); }
           }}>{t('Save', 'บันทึก', '保存')}</button>}>
           <Grid cols={2}>
             <Field label={t('Bank', 'ธนาคาร', '银行')}>
               <select value={add.bank} onChange={(e) => setAdd({ ...add, bank: e.target.value })}>
-                {['ICBC 工行', 'ABC 农行', 'CCB 建行', 'BOC 中行', 'Alipay 支付宝', 'WeChat 微信', 'Other 其他'].map((b) => <option key={b}>{b}</option>)}
+                {[...new Set([add.bank, 'ICBC 工行', 'ABC 农行', 'CCB 建行', 'BOC 中行', 'Alipay 支付宝', 'WeChat 微信', 'Other 其他'])].map((b) => <option key={b}>{b}</option>)}
               </select>
             </Field>
+            <Field label={t('Branch', 'สาขาธนาคาร', '支行')}><input value={add.branch || ''} onChange={(e) => setAdd({ ...add, branch: e.target.value })} /></Field>
             <Field label={t('Account name', 'ชื่อบัญชี', '帐户名')}><input value={add.account_name || ''} onChange={(e) => setAdd({ ...add, account_name: e.target.value })} /></Field>
             <Field label={t('Account number', 'เลขบัญชี', '帐号')}><input value={add.account_number || ''} onChange={(e) => setAdd({ ...add, account_number: e.target.value })} /></Field>
             <Field label={t('Phone', 'เบอร์โทร', '电话')}><input value={add.tel || ''} onChange={(e) => setAdd({ ...add, tel: e.target.value })} /></Field>
@@ -193,7 +195,8 @@ export function BillDoc({ k }: { k: any }) {
           <li><span>{L('Bank', 'ธนาคาร', '开户银行')}</span><b>{k.supplier_bank || '-'}</b></li>
           <li><span>{L('Account name', 'ชื่อบัญชี', '开户人')}</span><b>{k.supplier_account || '-'}</b></li>
           <li><span>{L('Account / card no.', 'เลขบัญชี', '账户/卡号')}</span><b className="mono">{k.supplier_number || '-'}</b></li>
-          <li><span>{L('Supplier phone', 'เบอร์ร้าน', '供应商电话')}</span><b>{k.supplier_tel || '-'}</b></li>
+          <li><span>{L('Branch', 'สาขาธนาคาร', '支行')}</span><b>{k.supplier_branch || '-'}</b></li>
+          <li><span>{L('Phone', 'เบอร์โทร', '电话')}</span><b>{k.supplier_tel || '-'}</b></li>
         </ol>
         <dl className="bd-totals">
           <div><dt>{L('Total', 'รวม', '共计')}</dt><dd>{money(k.total)}</dd></div>
@@ -202,6 +205,7 @@ export function BillDoc({ k }: { k: any }) {
           <div className="bd-due"><dt>{L('To pay', 'ยอดที่ต้องโอน', '余额')}</dt><dd>¥ {money(k.due)}</dd></div>
         </dl>
       </div>
+      <p className="bd-note">** 本公司只代客户收货，概不负责货款 <span>บริษัทเป็นตัวแทนลูกค้าในการรับสินค้าเท่านั้น ไม่มีส่วนรับผิดชอบเรื่องการชำระเงิน</span></p>
       <footer className="bd-foot">
         <div>{lookups.settings.print_phone && <>{L('Phone', 'โทร', '电话')} <b>{lookups.settings.print_phone}</b></>}</div>
         <div className="bd-sign"><span>{L('Supplier signature', 'ลายเซ็นร้านค้า', '供应商代表签名')}</span><i /></div>

@@ -454,6 +454,8 @@ kbd.on-primary { background: rgba(255,255,255,0.18); color: inherit; border-colo
 .bd-totals dd { font-variant-numeric: tabular-nums; }
 .bd-totals .bd-due { border-top: 1.5px solid #000; padding-top: 6px; font-weight: 700; }
 .bd-totals .bd-due dd { font-size: 18px; }
+.bd-note { margin: 18px 0 0; font-size: 13px; font-weight: 600; }
+.bd-note span { display: block; font-weight: 400; }
 .bd-foot { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 20px; align-items: end; margin-top: 36px; }
 .bd-sign { display: flex; align-items: flex-end; gap: 8px; }
 .bd-sign > span { font-weight: 600; }

@@ -34,7 +34,7 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   const shoes = await call('/r/styles', { body: { zh: '鞋子', th: 'รองเท้า', en: 'Shoes', unit_id: unit.id } });
   const clothes = await call('/r/styles', { body: { zh: '衣服', th: 'เสื้อผ้า', en: 'Clothes', unit_id: unit.id } });
   await call('/r/exchange_rates', { body: { date: d, rate: 5 } });
-  const supplier = await call('/r/supplier_banks', { body: { bank: 'ICBC 工行', account_name: '义乌小商品', account_number: '6222 1234 5678', tel: '13800000000' } });
+  const supplier = await call('/r/supplier_banks', { body: { bank: 'ICBC 工行', account_name: '义乌小商品', branch: '义乌分行', account_number: '6222 1234 5678', tel: '13800000000' } });
 
   log('customers');
   const a = await call('/customers', { body: { code: 'M4-001', firstname: 'สมชาย', nickname: 'ชาย', phone: '0812345678', calc_type: 'mix' } });
@@ -62,6 +62,7 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   ] } });
   await call('/packages', { body: { customer_id: a.id, items: [{ order_item_id: o.items[0].id, quantity: 1, unit_price: 50 }] }, expect: 409 }); // over-receive
   let k = await call('/packages/' + pkg.id);
+  assert.equal(k.supplier_branch, '义乌分行');
   assert.equal(k.due, 950);
   await call(`/package-items/${k.items[1].id}/statements`, { body: { type: 'refund', amount: 50, description: 'shop refund' } });
   k = await call('/packages/' + pkg.id);

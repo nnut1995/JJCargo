@@ -250,7 +250,7 @@ export function salesRouter() {
   });
   r.get('/packages/next-code', (_req, res) => res.json({ code: nextPackageCode() }));
   r.get('/packages/:id', (req, res) => {
-    const k = get<any>(`SELECT k.*, c.code AS customer_code, c.firstname, c.lastname, c.nickname, c.phone AS customer_phone, sb.bank AS supplier_bank, sb.account_name AS supplier_account, sb.account_number AS supplier_number, sb.tel AS supplier_tel
+    const k = get<any>(`SELECT k.*, c.code AS customer_code, c.firstname, c.lastname, c.nickname, c.phone AS customer_phone, sb.bank AS supplier_bank, sb.account_name AS supplier_account, sb.account_number AS supplier_number, sb.branch AS supplier_branch, sb.tel AS supplier_tel
       FROM packages k JOIN customers c ON c.id = k.customer_id LEFT JOIN supplier_banks sb ON sb.id = k.supplier_bank_id
       WHERE k.id = ? OR k.code = ?`, [req.params.id, req.params.id]);
     if (!k) throw new HttpError(404, 'ไม่พบบิล / Bill not found');
