@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { all, get, run, tx, audit } from '../db.js';
 import { HttpError, needMenu, canVerify } from '../auth.js';
 import {
-  addBalance, removeBalanceBySource, postCash, unpostCash, customerBalance, orderItemProgress, packageTotals, nextPackageCode, round2, today, type Currency,
+  addBalance, removeBalanceBySource, postCash, unpostCash, customerBalance, orderItemProgress, orderComplete, completeOrderIds, ORDER_COMPLETE_SQL, packageTotals, nextPackageCode, round2, today, type Currency,
 } from '../logic.js';
 
 const CUSTOMER_FIELDS = ['code', 'firstname', 'lastname', 'nickname', 'phone', 'email', 'kilo_rate', 'cubic_rate', 'kilo_rate_yuan',
@@ -134,12 +134,14 @@ export function salesRouter() {
         (SELECT COALESCE(SUM(quantity),0) FROM order_items i WHERE i.order_id = o.id) AS qty,
         (SELECT COALESCE(SUM(pi.quantity),0) FROM package_items pi JOIN order_items i ON i.id = pi.order_item_id WHERE i.order_id = o.id) AS received_qty
         ,(SELECT COALESCE(SUM(pk.quantity),0) FROM packing_items pk JOIN order_items i ON i.id = pk.order_item_id WHERE i.order_id = o.id) AS packed_qty
+        ,${ORDER_COMPLETE_SQL('o.id')} AS complete
       FROM orders o JOIN customers c ON c.id = o.customer_id WHERE ${w.join(' AND ')} ORDER BY o.id DESC LIMIT 1000`, p));
   });
   r.get('/orders/:id', (req, res) => {
     const o = get<any>('SELECT o.*, c.code AS customer_code, c.firstname, c.lastname, c.nickname, c.phone AS customer_phone FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?', [req.params.id]);
     if (!o) throw new HttpError(404, 'ไม่พบออเดอร์ / Order not found');
     o.items = orderItemProgress('oi.order_id = ?', [o.id]);
+    o.complete = completeOrderIds(o.items).has(o.id);
     // Supplier bills that include lines of this order, with this order's part and the bill's paid state.
     o.bills = all<any>(`SELECT k.id, k.code, k.date, k.is_done_paid, COUNT(pi.id) AS lines,
         SUM(pi.quantity) AS qty, SUM(pi.quantity * pi.unit_price) AS amount
@@ -223,7 +225,8 @@ export function salesRouter() {
   r.get('/packages/waiting', needMenu('package.new'), (req, res) => {
     const rows = orderItemProgress(req.query.customer_id ? 'o.customer_id = ?' : '1=1', req.query.customer_id ? [req.query.customer_id] : []);
     const q = String(req.query.order_id || '').trim();
-    res.json(rows.filter((x) => x.received_qty < x.quantity && (!q || String(x.order_id) === q || (x.order_no || '').includes(q))));
+    const done = completeOrderIds(rows);
+    res.json(rows.filter((x) => x.received_qty < x.quantity && !done.has(x.order_id) && (!q || String(x.order_id) === q || (x.order_no || '').includes(q))));
   });
   r.get('/packages', needMenu('package.search', 'package.new', 'invoice.payment'), (req, res) => {
     const w = ['1=1']; const p: any[] = [];
@@ -264,11 +267,21 @@ export function salesRouter() {
   });
   function savePackageItems(packageId: number, customerId: number, items: any[]) {
     const keep = new Set<number>();
+    // checked against the state before this save, so lines of the same bill don't block each other
+    const complete = new Map<number, boolean>();
+    const isComplete = (orderId: number) => { if (!complete.has(orderId)) complete.set(orderId, orderComplete(orderId)); return complete.get(orderId)!; };
+    for (const it of items) {
+      const oi0 = orderItemProgress('oi.id = ?', [it.order_item_id])[0];
+      if (oi0) isComplete(oi0.order_id);
+    }
     for (const it of items) {
       const oi = orderItemProgress('oi.id = ?', [it.order_item_id])[0];
       if (!oi) throw new HttpError(400, 'Unknown order line');
       if (oi.customer_id !== Number(customerId)) throw new HttpError(400, `不同的客户 / Order ${oi.order_id} belongs to another customer`);
       const prev = it.id ? get<any>('SELECT quantity FROM package_items WHERE id = ?', [it.id])?.quantity || 0 : 0;
+      if (Number(it.quantity) > prev && isComplete(oi.order_id)) {
+        throw new HttpError(409, `ออเดอร์ ${oi.order_no || '#' + oi.order_id} ครบแล้ว เปิดบิลโอนไม่ได้ / 订单已完成，不能开划款单 / Order is complete, no new bill`);
+      }
       if (oi.received_qty - prev + Number(it.quantity) > oi.quantity) throw new HttpError(409, `Order ${oi.order_id} / ${oi.product_id}: receiving more than ordered`);
       if (it.id) {
         run('UPDATE package_items SET quantity=?, unit_price=?, deposit=?, receive_date=? WHERE id = ? AND package_id = ?',

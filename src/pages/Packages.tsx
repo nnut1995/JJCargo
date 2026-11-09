@@ -66,7 +66,7 @@ export function PackageEdit() {
     if (cid && !fromOrder) setH((x: any) => ({ ...x, customer_id: Number(cid) }));
     // Opened from an order: customer, shop bank, deposit and every line not billed yet are filled in.
     if (fromOrder) api<any>(`/orders/${fromOrder}`).then((o) => {
-      const open = o.items.filter((i: any) => i.quantity - i.received_qty > 0);
+      const open = o.complete ? [] : o.items.filter((i: any) => i.quantity - i.received_qty > 0);
       const firstBill = o.items.every((i: any) => !i.received_qty);
       setH((x: any) => ({ ...x, customer_id: o.customer_id, supplier_bank_id: o.last_supplier_bank_id ?? x.supplier_bank_id, deposit: firstBill ? o.deposit || 0 : 0 }));
       setLines(open.map(toLine));
@@ -90,7 +90,14 @@ export function PackageEdit() {
   return (
     <Page back={id ? `/packages/${id}` : '/orders?tab=bills'} title={id ? `${t('Bill', 'บิล', '划款单')} ${h.code}` : t('New supplier bill / receive goods', 'เปิดบิลโอนใหม่ / รับของ', '开划款单 / 收货')}
       actions={<button className="primary" disabled={busy || !lines.length} onClick={save}>{t('Save bill', 'บันทึก', '保存')}</button>}>
-      {prefilled && (
+      {prefilled?.complete && (
+        <div className="note warn"><Bi>
+          {t(`Order ${prefilled.order_no || '#' + prefilled.id} is complete (everything received), so it can't get a new bill.`,
+            `ออเดอร์ ${prefilled.order_no || '#' + prefilled.id} ครบแล้ว (รับของครบทุกรายการ) เปิดบิลโอนเพิ่มไม่ได้`,
+            `订单 ${prefilled.order_no || '#' + prefilled.id} 已完成（全部收到），不能再开划款单。`)}
+        </Bi></div>
+      )}
+      {prefilled && !prefilled.complete && (
         <div className="note info"><Bi>
           {t(`Filled in from order ${prefilled.order_no || '#' + prefilled.id}: customer, every line not billed yet${prefilled.supplier_name ? ', shop bank used last time' : ''}. Check quantities and prices before saving.`,
             `เติมข้อมูลจากออเดอร์ ${prefilled.order_no || '#' + prefilled.id} ให้แล้ว: ลูกค้า, ทุกรายการที่ยังไม่เปิดบิล${prefilled.supplier_name ? ', บัญชีร้านที่เคยโอนครั้งล่าสุด' : ''} ตรวจจำนวนและราคาก่อนบันทึก`,

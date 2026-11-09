@@ -409,6 +409,7 @@ kbd.on-primary { background: rgba(255,255,255,0.18); color: inherit; border-colo
 /* Short notice above a form (e.g. "filled in from order ...") */
 .note { padding: 10px 14px; border-radius: 7px; margin-bottom: 16px; font-size: 13px; }
 .note.info { background: var(--info-soft); color: var(--text); }
+.note.warn { background: var(--warn-soft); color: var(--text); }
 .order-info { margin-bottom: 16px; }
 .order-cust { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .order-cust-code { font-size: 24px; font-weight: 700; line-height: 1.2; }
