@@ -343,7 +343,7 @@ export function PackingList() {
   const t = useT();
   const can = useCan();
   const [sp, setSp] = useSearchParams();
-  const [q, setQ] = useState<any>({ sent: '1', unmeasured: '', customer_id: sp.get('customer') ? Number(sp.get('customer')) : null });
+  const [q, setQ] = useState<any>({ sent: '0', unmeasured: '', customer_id: sp.get('customer') ? Number(sp.get('customer')) : null });
   const { data, reload } = useApi<any[]>('/packing', q);
   const [edit, setEdit] = useState<number | null>(null);
   const [sel, setSel] = useState<Set<any>>(new Set());
@@ -372,7 +372,7 @@ export function PackingList() {
           <Field label={t('Tracking', 'เลขแทรค', '单号')}><input value={q.tracking || ''} onChange={(e) => set('tracking', e.target.value)} /></Field>
           <Field label={t('Status', 'สถานะ', '状态')}>
             <select value={q.sent} onChange={(e) => set('sent', e.target.value)}>
-              <option value="1">{t('On container', 'ขึ้นตู้แล้ว', '已发')}</option><option value="0">{t('Not loaded yet', 'ยังไม่ขึ้นตู้', '未发货')}</option>
+              <option value="0">{t('Not loaded yet', 'ยังไม่ขึ้นตู้', '未发货')}</option><option value="1">{t('On container', 'ขึ้นตู้แล้ว', '已发')}</option>
               <option value="">{t('All', 'ทั้งหมด', '全部')}</option>
             </select>
           </Field>
