@@ -78,6 +78,7 @@ export function logisticsRouter() {
     if (q.shipment_id) { w.push('p.shipment_id = ?'); p.push(q.shipment_id); }
     if (q.sent === '1') w.push('p.off_china_date IS NOT NULL');
     if (q.sent === '0') w.push('p.off_china_date IS NULL');
+    if (q.sent === 'noround') w.push('p.shipment_id IS NULL');
     if (q.code) { w.push('p.packing_code LIKE ?'); p.push(`%${q.code}%`); }
     if (q.tracking) { w.push('(p.tracking_no LIKE ? OR EXISTS (SELECT 1 FROM packing_items i WHERE i.packing_id = p.id AND i.tracking_no LIKE ?))'); p.push(`%${q.tracking}%`, `%${q.tracking}%`); }
     if (q.order_id) { w.push('EXISTS (SELECT 1 FROM packing_items i JOIN order_items oi ON oi.id = i.order_item_id JOIN orders o ON o.id = oi.order_id WHERE i.packing_id = p.id AND (CAST(oi.order_id AS TEXT) = ? OR o.order_no LIKE ?))'); p.push(q.order_id, `%${q.order_id}%`); }
