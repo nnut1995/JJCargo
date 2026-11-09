@@ -232,7 +232,9 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
             </div>
           </div>
         )}
-        <h3 style={{ marginTop: 16 }}><Bi>{mode === 'order' ? t('Extra items without order (optional)', 'สินค้าไม่มีออเดอร์ (ถ้ามี)', '没有订单的产品') : t('Contents (optional)', 'สินค้าในกล่อง (ไม่บังคับ ใส่ทีหลังได้)', '产品')}</Bi></h3>
+        {/* pack & weigh: contents come from the order lines only; receive-without-bill picks categories */}
+        {mode === 'nobill' && <>
+        <h3 style={{ marginTop: 16 }}><Bi>{t('Contents (optional)', 'สินค้าในกล่อง (ไม่บังคับ ใส่ทีหลังได้)', '产品')}</Bi></h3>
         <div className="row" style={{ marginBottom: 10 }}>
           <div style={{ minWidth: 260, flex: 1 }}><StylePick value={newStyle.style_id} onChange={(v) => setNewStyle({ ...newStyle, style_id: v })} /></div>
           <input type="number" style={{ width: 100 }} value={newStyle.quantity} onChange={(e) => setNewStyle({ ...newStyle, quantity: e.target.value })} />
@@ -243,6 +245,7 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
           { key: 'quantity', label: t('Qty', 'จำนวน', '数量'), align: 'right' },
           { key: 'x', label: '', render: (r) => <button className="link danger" onClick={() => setStyles(styles.filter((s) => s.key !== r.key))}><X size={16} aria-hidden /><span className="sr-only">Remove</span></button> },
         ]} />}
+        </>}
       </Modal>
       <PackPrint packings={print?.packings || null} start={print?.start} onClose={() => setPrint(null)} />
     </>
