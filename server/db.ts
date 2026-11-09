@@ -12,14 +12,26 @@ db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
 type Params = Record<string, unknown> | unknown[];
 const norm = (p?: Params) => (p === undefined ? [] : Array.isArray(p) ? p : [p]);
 
+// Prepared statements are reused: compiling SQL costs more than running most of these small queries.
+const stmts = new Map<string, ReturnType<typeof db.prepare>>();
+function prep(sql: string) {
+  let s = stmts.get(sql);
+  if (!s) {
+    if (stmts.size >= 500) stmts.clear(); // dynamic WHERE clauses make a few variants; keep the cache bounded
+    s = db.prepare(sql);
+    stmts.set(sql, s);
+  }
+  return s;
+}
+
 export function all<T = any>(sql: string, p?: Params): T[] {
-  return db.prepare(sql).all(...(norm(p) as any[])) as T[];
+  return prep(sql).all(...(norm(p) as any[])) as T[];
 }
 export function get<T = any>(sql: string, p?: Params): T | undefined {
-  return db.prepare(sql).get(...(norm(p) as any[])) as T | undefined;
+  return prep(sql).get(...(norm(p) as any[])) as T | undefined;
 }
 export function run(sql: string, p?: Params) {
-  const r = db.prepare(sql).run(...(norm(p) as any[]));
+  const r = prep(sql).run(...(norm(p) as any[]));
   return { id: Number(r.lastInsertRowid), changes: Number(r.changes) };
 }
 export function tx<T>(fn: () => T): T {
@@ -197,6 +209,7 @@ CREATE INDEX IF NOT EXISTS ix_pgi_oi ON packing_items(order_item_id);
 CREATE INDEX IF NOT EXISTS ix_pgi_pk ON packing_items(packing_id);
 CREATE INDEX IF NOT EXISTS ix_pkp_pkg ON package_payments(package_id);
 CREATE INDEX IF NOT EXISTS ix_pks_pi ON package_item_statements(package_item_id);
+CREATE INDEX IF NOT EXISTS ix_ps_pk ON packing_styles(packing_id);
 `;
 
 const PROVINCES = `กรุงเทพมหานคร,กระบี่,กาญจนบุรี,กาฬสินธุ์,กำแพงเพชร,ขอนแก่น,จันทบุรี,ฉะเชิงเทรา,ชลบุรี,ชัยนาท,ชัยภูมิ,ชุมพร,เชียงราย,เชียงใหม่,ตรัง,ตราด,ตาก,นครนายก,นครปฐม,นครพนม,นครราชสีมา,นครศรีธรรมราช,นครสวรรค์,นนทบุรี,นราธิวาส,น่าน,บึงกาฬ,บุรีรัมย์,ปทุมธานี,ประจวบคีรีขันธ์,ปราจีนบุรี,ปัตตานี,พระนครศรีอยุธยา,พะเยา,พังงา,พัทลุง,พิจิตร,พิษณุโลก,เพชรบุรี,เพชรบูรณ์,แพร่,ภูเก็ต,มหาสารคาม,มุกดาหาร,แม่ฮ่องสอน,ยโสธร,ยะลา,ร้อยเอ็ด,ระนอง,ระยอง,ราชบุรี,ลพบุรี,ลำปาง,ลำพูน,เลย,ศรีสะเกษ,สกลนคร,สงขลา,สตูล,สมุทรปราการ,สมุทรสงคราม,สมุทรสาคร,สระแก้ว,สระบุรี,สิงห์บุรี,สุโขทัย,สุพรรณบุรี,สุราษฎร์ธานี,สุรินทร์,หนองคาย,หนองบัวลำภู,อ่างทอง,อำนาจเจริญ,อุดรธานี,อุตรดิตถ์,อุทัยธานี,อุบลราชธานี`.split(',');

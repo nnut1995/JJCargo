@@ -1,5 +1,5 @@
 // API client, i18n, shared data hooks.
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
 // ---------- API
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; query?: Record<string, any> } = {}): Promise<T> {
@@ -27,16 +27,20 @@ export function useApi<T = any>(path: string | null, query?: Record<string, any>
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const key = path ? path + JSON.stringify(query || {}) : null;
+  // Only the latest request may set data: when the search text changes quickly, an older (slower) answer must not overwrite a newer one.
+  const seq = useRef(0);
   const reload = useCallback(async () => {
     if (!path) return;
+    const n = ++seq.current;
     setLoading(true);
     setError(undefined);
     try {
-      setData(await api<T>(path, { query }));
+      const d = await api<T>(path, { query });
+      if (n === seq.current) setData(d);
     } catch (e: any) {
-      setError(e.message);
+      if (n === seq.current) setError(e.message);
     } finally {
-      setLoading(false);
+      if (n === seq.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);

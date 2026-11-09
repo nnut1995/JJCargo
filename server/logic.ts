@@ -136,6 +136,21 @@ export function packageTotals(packageId: number) {
   return { total, deposit, deductions: round2(deductions), due, paid: round2(paid), remaining: round2(due - paid) };
 }
 
+// Same figures as packageTotals() for many bills in one query: add PACKAGE_TOTALS_COLS to a SELECT over `packages k`,
+// then pass each row through packageTotalsOf(). Avoids 4 extra queries per bill on the bill lists.
+export const PACKAGE_TOTALS_COLS = `
+  COALESCE((SELECT SUM(quantity * unit_price) FROM package_items x WHERE x.package_id = k.id), 0) AS _t,
+  COALESCE((SELECT SUM(deposit) FROM package_items x WHERE x.package_id = k.id), 0) AS _d,
+  COALESCE((SELECT SUM(st.amount) FROM package_item_statements st JOIN package_items x ON x.id = st.package_item_id WHERE x.package_id = k.id), 0) AS _s,
+  COALESCE((SELECT SUM(amount) FROM package_payments x WHERE x.package_id = k.id), 0) AS _p`;
+export function packageTotalsOf<T extends { _t: number; _d: number; _s: number; _p: number; deposit?: number | null }>(row: T) {
+  const { _t, _d, _s, _p, ...rest } = row;
+  const total = round2(_t);
+  const deposit = round2(_d + (row.deposit || 0));
+  const due = round2(total - deposit - _s);
+  return { ...rest, total, deposit, deductions: round2(_s), due, paid: round2(_p), remaining: round2(due - _p) };
+}
+
 // Optional: notify an external customer website about status changes (M4Helper.SendStatus / SendOffChina in the old app).
 export async function notifyStatus(event: string, payload: unknown) {
   const url = setting('status_webhook_url');
