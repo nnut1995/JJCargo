@@ -34,7 +34,7 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   const shoes = await call('/r/styles', { body: { zh: '鞋子', th: 'รองเท้า', en: 'Shoes', unit_id: unit.id } });
   const clothes = await call('/r/styles', { body: { zh: '衣服', th: 'เสื้อผ้า', en: 'Clothes', unit_id: unit.id } });
   await call('/r/exchange_rates', { body: { date: d, rate: 5 } });
-  const supplier = await call('/r/supplier_banks', { body: { bank: 'ICBC 工行', account_name: '义乌小商品', account_number: '6222 1234 5678', tel: '13800000000' } });
+  const supplier = await call('/r/supplier_banks', { body: { bank: 'ICBC 工行', account_name: '义乌小商品', branch: '义乌分行', account_number: '6222 1234 5678', tel: '13800000000' } });
 
   log('customers');
   const a = await call('/customers', { body: { code: 'M4-001', firstname: 'สมชาย', nickname: 'ชาย', phone: '0812345678', calc_type: 'mix' } });
@@ -62,6 +62,7 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   ] } });
   await call('/packages', { body: { customer_id: a.id, items: [{ order_item_id: o.items[0].id, quantity: 1, unit_price: 50 }] }, expect: 409 }); // over-receive
   let k = await call('/packages/' + pkg.id);
+  assert.equal(k.supplier_branch, '义乌分行');
   assert.equal(k.due, 950);
   await call(`/package-items/${k.items[1].id}/statements`, { body: { type: 'refund', amount: 50, description: 'shop refund' } });
   k = await call('/packages/' + pkg.id);
@@ -93,6 +94,14 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   const pkOrd = await call('/packing', { body: { customer_id: b.id, items: [{ order_item_id: w1[0].id, quantity: 3 }] } });
   assert.equal(pkOrd.packings[0].order_nos, 'TB-778899');
   assert.equal((await call('/orders?id=TB-778899'))[0].packed_qty, 3);
+  assert.equal((await call('/orders?id=TB-778899'))[0].complete, 0); // 3 of 4 packed: a bill can still be opened
+  const pkRest = await call('/packing', { body: { customer_id: b.id, items: [{ order_item_id: w1[0].id, quantity: 1 }] } });
+  // all 4 received ("ครบ"): the order is complete, so no new supplier bill for it
+  assert.equal((await call('/orders?id=TB-778899'))[0].complete, 1);
+  assert.equal((await call('/orders/' + ordNo.id)).complete, true);
+  assert.equal((await call(`/packages/waiting?customer_id=${b.id}&order_id=TB-778899`)).length, 0);
+  await call('/packages', { body: { customer_id: b.id, items: [{ order_item_id: w1[0].id, quantity: 1, unit_price: 10 }] }, expect: 409 });
+  await call(`/packing/${pkRest.created[0].id}`, { method: 'DELETE' });
   const unmeasured = await call(`/packing?unmeasured=1&customer_id=${b.id}`);
   assert.equal(unmeasured.length, 4);
   await call('/packing/measure', { body: { rows: [...rcv.created, pkOrd.created[0]].map((c: any) => ({ id: c.id, weight: 2, cubic1: 10, cubic2: 10, cubic3: 10 })) } });

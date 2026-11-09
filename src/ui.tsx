@@ -176,8 +176,13 @@ export function Modal({ open, title, onClose, children, wide, small, footer }: {
   open: boolean; title: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean; small?: boolean; footer?: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Callers pass a new onClose on every render; keep it in a ref so typing in the dialog
+  // doesn't re-run the focus effect (that made the cursor jump back to the first field).
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
+    const onClose = () => closeRef.current();
     const prev = document.activeElement as HTMLElement | null;
     const h = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
@@ -197,7 +202,7 @@ export function Modal({ open, title, onClose, children, wide, small, footer }: {
     }
     document.body.classList.add('modal-open');
     return () => { window.removeEventListener('keydown', h); document.body.classList.remove('modal-open'); prev?.focus?.(); };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

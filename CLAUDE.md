@@ -74,6 +74,8 @@ scripts/flow.ts        full business flow through the API with assertions (used 
 - `orders.order_no` = shop / platform order number typed by staff (unique when given). Show `order_no || '#'+id` everywhere an order is named.
 - Packing no longer needs weight, size or contents; boxes can be received first and measured later (`/packing/weigh`, `POST /api/packing/measure`).
 - An order line can be packed up to its **ordered** qty even before a supplier bill exists (bill = payment to the shop). "Not received yet" on orders = qty − max(billed, packed).
+- An order is **complete** ("ครบ") when every line has max(billed, packed) ≥ qty (`logic.orderComplete`, `complete` on order rows). A complete order gets no new supplier bill (server 409, buttons hidden, not in `/packages/waiting`).
+- Supplier bill print: bank list is 1 bank, 2 account name, 3 account no., 4 branch (`supplier_banks.branch`, 支行), 5 phone, then the "only receive goods, not responsible for payment" note. Shop accounts can be edited from the pencil next to the picker.
 - Shipment rounds have a `status` (steps in `shared/statuses.ts`) with history in `shipment_status_log` (`POST /api/shipments/:id/status`).
 - Dashboard figures and rows link to the related screen (no separate quick-menu card).
 - Customer screen opens read-only (Edit button); shows THB, CNY and unpaid shipping (unpaid `shipment_summaries`) separately.

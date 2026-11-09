@@ -94,7 +94,7 @@ export interface Lookups {
   provinces: { id: number; name: string }[];
   statuses: { id: number; text: string }[];
   roles: { id: number; description: string }[];
-  supplierBanks: { id: number; bank: string; account_name?: string; account_number?: string; tel?: string }[];
+  supplierBanks: { id: number; bank: string; branch?: string; account_name?: string; account_number?: string; tel?: string }[];
   settings: Record<string, string>;
   rate: number;
 }

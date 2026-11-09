@@ -122,6 +122,21 @@ export function orderItemProgress(where = '1=1', params: any[] = []) {
   );
 }
 
+// An order is complete ("ครบ") when every line has been received in full, by supplier bill or by packing.
+// The order list shows it as a green x/x badge. A complete order can't get a new supplier bill.
+export const ORDER_COMPLETE_SQL = (orderId: string) => `NOT EXISTS (SELECT 1 FROM order_items ci WHERE ci.order_id = ${orderId} AND MAX(
+  COALESCE((SELECT SUM(quantity) FROM package_items x WHERE x.order_item_id = ci.id), 0),
+  COALESCE((SELECT SUM(quantity) FROM packing_items x WHERE x.order_item_id = ci.id), 0)) < ci.quantity)`;
+export function orderComplete(orderId: number): boolean {
+  return !!get<{ c: number }>(`SELECT ${ORDER_COMPLETE_SQL('?')} AS c`, [orderId])?.c;
+}
+/** Order ids among these progress rows whose every line is received in full (rows must hold all lines of each order). */
+export function completeOrderIds(rows: { order_id: number; quantity: number; received_qty: number; packed_qty: number }[]) {
+  const open = new Set<number>(); const seen = new Set<number>();
+  for (const r of rows) { seen.add(r.order_id); if (Math.max(r.received_qty, r.packed_qty) < r.quantity) open.add(r.order_id); }
+  return new Set([...seen].filter((id) => !open.has(id)));
+}
+
 export function packageTotals(packageId: number) {
   const items = get<{ t: number; d: number }>(
     'SELECT COALESCE(SUM(quantity * unit_price), 0) AS t, COALESCE(SUM(deposit), 0) AS d FROM package_items WHERE package_id = ?', [packageId])!;
