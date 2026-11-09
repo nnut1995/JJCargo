@@ -183,7 +183,7 @@ function LoadModal({ round, onClose }: { round: number | null; onClose: () => vo
       </Grid>
       {sid ? (
         <form onSubmit={scan} style={{ marginTop: 12 }}>
-          <input ref={ref} className="scan" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('Scan box code (PK…), tracking no. or CTN, then Enter', 'สแกนเลขกระสอบ (PK…) / เลขแทรค / เลข CTN แล้วกด Enter', '扫描包号 / 单号 / CTN')} />
+          <input ref={ref} className="scan" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('Scan box no., tracking no. or CTN, then Enter', 'สแกนเลขกระสอบ / เลขแทรค / เลข CTN แล้วกด Enter', '扫描包号 / 单号 / CTN')} />
         </form>
       ) : <p className="muted">{t('Choose a round first', 'เลือกรอบขนส่งก่อน แล้วสแกนเลขกระสอบ', '先选择发货单')}</p>}
       {last && <p><Badge tone="good"><Check size={12} aria-hidden /> {last.packing_code}</Badge> {last.customer_code} · {last.weight} kg · CTN {last.ctn}/{last.no}</p>}

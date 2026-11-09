@@ -96,11 +96,14 @@ export function shipmentCustomerCharges(shipmentId: number, customerId: number, 
   return { rates, packings, others, shipping, other, total: round2(shipping + other) };
 }
 
+/** Box reference: yyyymm + 4-digit running number that restarts each month, e.g. 2026110001. Older boxes keep their PK… codes. */
 export function nextPackingCode(): string {
-  const last = get<{ id: number }>('SELECT MAX(id) AS id FROM packings')?.id || 0;
-  let n = last + 1;
-  while (get('SELECT 1 FROM packings WHERE packing_code = ?', [`PK${String(n).padStart(4, '0')}`])) n++;
-  return `PK${String(n).padStart(4, '0')}`;
+  const d = new Date(); // server local time, so the month flips at local midnight
+  const prefix = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const last = get<{ code: string }>("SELECT packing_code AS code FROM packings WHERE packing_code GLOB ? ORDER BY LENGTH(packing_code) DESC, packing_code DESC LIMIT 1", [`${prefix}[0-9][0-9][0-9][0-9]*`]);
+  let n = last ? Number(last.code.slice(prefix.length)) + 1 : 1;
+  while (get('SELECT 1 FROM packings WHERE packing_code = ?', [`${prefix}${String(n).padStart(4, '0')}`])) n++;
+  return `${prefix}${String(n).padStart(4, '0')}`;
 }
 export function nextPackageCode(): string {
   const d = new Date();
