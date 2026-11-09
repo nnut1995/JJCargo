@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, pick, cbm, money } from '../lib';
 import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, StylePick, Badge, Modal, PrintModal, Barcode, Tabs, useAction, useAsk, useToast, Bi } from '../ui';
-import { Printer, ReceiptText, Plus, X, PackagePlus, PackageOpen, FileSpreadsheet } from 'lucide-react';
+import { Printer, ReceiptText, Plus, X, PackagePlus, PackageOpen, FileSpreadsheet, ArrowLeft } from 'lucide-react';
 
 // One reference per box for lists: order no. first, then tracking, then the reference id (yyyymmnnnn).
 const boxRef = (r: { order_nos?: string | null; tracking_no?: string | null; reference_id?: string | null }) => r.order_nos || r.tracking_no || r.reference_id || '';
@@ -363,7 +363,11 @@ export function PackingList() {
   const can = useCan();
   const [sp, setSp] = useSearchParams();
   const [q, setQ] = useState<any>({ sent: '0', unmeasured: '', customer_id: sp.get('customer') ? Number(sp.get('customer')) : null });
-  const { data, reload } = useApi<any[]>('/packing', q);
+  // no customer and no search text: one line per customer; click a customer to see their boxes
+  const grouped = !q.customer_id && !String(q.ref || '').trim();
+  const { data, reload: reloadBoxes } = useApi<any[]>(grouped ? null : '/packing', q);
+  const groups = useApi<any[]>(grouped ? '/packing/by-customer' : null, q);
+  const reload = () => { if (grouped) groups.reload(); else reloadBoxes(); };
   const [edit, setEdit] = useState<number | null>(null);
   const [sel, setSel] = useState<Set<any>>(new Set());
   const [print, setPrint] = useState<{ packings: any[]; start: 'labels' | 'receipt' } | null>(null);
@@ -401,7 +405,23 @@ export function PackingList() {
           </Field>
         </Grid>
       </Card>
+      {grouped ? <>
+        <div className="row" style={{ margin: '0 0 10px', alignItems: 'center' }}>
+          <span className="muted">{groups.data ? `${groups.data.length} ${t('customers', 'ลูกค้า', '客户')} · ${groups.data.reduce((n, g) => n + g.boxes, 0)} ${t('boxes', 'กล่อง', '包')}` : ''}</span>
+        </div>
+        <Table rows={groups.data} onRow={(g) => set('customer_id', g.customer_id)} columns={[
+          { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户'), render: (g) => <b>{g.customer_code}</b> },
+          { key: 'boxes', label: t('Boxes', 'จำนวนกล่อง', '包数'), align: 'right', sum: true, digits: 0 },
+          { key: 'not_sent', label: t('Not loaded', 'ยังไม่ขึ้นตู้', '未发货'), align: 'right', sum: true, digits: 0 },
+          { key: 'unweighed', label: t('Not weighed', 'ยังไม่ชั่ง', '未称'), align: 'right', sum: true, digits: 0, render: (g) => g.unweighed ? <Badge tone="warn">{g.unweighed}</Badge> : 0 },
+          { key: 'weight', label: 'kg', align: 'right', sum: true, render: (g) => money(g.weight || 0) },
+          { key: 'cbm', label: t('CBM', 'คิว', '立方'), align: 'right', sum: true, digits: 4, render: (g) => Number(g.cbm || 0).toFixed(4) },
+          { key: 'order_nos', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (g) => <span className="clip">{g.order_nos || ''}</span> },
+          { key: 'last_packed', label: t('Last packed', 'แพคล่าสุด', '最近打包'), render: (g) => g.last_packed?.slice(0, 16) },
+        ]} empty={t('No boxes', 'ไม่มีรายการ', '没有')} />
+      </> : <>
       <div className="row" style={{ margin: '0 0 10px', alignItems: 'center' }}>
+        {!grouped && q.customer_id && <button onClick={() => set('customer_id', null)}><ArrowLeft size={16} aria-hidden /> {t('All customers', 'ทุกลูกค้า', '所有客户')}</button>}
         <span className="muted">{data ? `${data.length} ${t('boxes', 'กล่อง', '包')}` : ''}{sel.size ? ` · ${t('selected', 'เลือก', '已选')} ${sel.size}` : ''}</span>
         <span style={{ flex: 1 }} />
         <button disabled={!sel.size} onClick={() => printSel('labels')}><Printer size={16} aria-hidden /> {t('Print labels', 'ปริ้นป้าย', '打印标签')} ({sel.size})</button>
@@ -423,6 +443,7 @@ export function PackingList() {
           {canEdit && !r.off_china_date && <button className="link danger" onClick={async () => { if (await ask(t('Delete this box?', 'ต้องการลบกล่องนี้?', '你确定要删除吗?'), { danger: true }) && await run(() => api(`/packing/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button>}
         </span> },
       ]} empty={t('No boxes', 'ไม่มีรายการ', '没有')} />
+      </>}
       {edit && <PackingEditModal id={edit} onClose={() => setEdit(null)} onSaved={reload} />}
       <PackPrint packings={print?.packings || null} start={print?.start} onClose={() => setPrint(null)} />
       {(dialog === 'new' && canNew) && <PackNewModal mode="order" order={sp.get('order') || ''} onClose={closeDialog} onSaved={reload} />}
