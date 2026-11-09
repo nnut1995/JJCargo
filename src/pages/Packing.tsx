@@ -365,9 +365,10 @@ export function PackingList() {
   const [q, setQ] = useState<any>({ sent: '0', unmeasured: '', customer_id: sp.get('customer') ? Number(sp.get('customer')) : null });
   // no customer and no search text: one line per customer; click a customer to see their boxes
   const grouped = !q.customer_id && !String(q.ref || '').trim();
-  const { data, reload: reloadBoxes } = useApi<any[]>(grouped ? null : '/packing', q);
+  const [cust, setCust] = useState<{ id: number; code: string } | null>(null); // customer opened in the dialog
+  const { data, reload: reloadBoxes } = useApi<any[]>(grouped && !cust ? null : '/packing', cust ? { ...q, customer_id: cust.id } : q);
   const groups = useApi<any[]>(grouped ? '/packing/by-customer' : null, q);
-  const reload = () => { if (grouped) groups.reload(); else reloadBoxes(); };
+  const reload = () => { if (grouped) groups.reload(); if (!grouped || cust) reloadBoxes(); };
   const [edit, setEdit] = useState<number | null>(null);
   const [sel, setSel] = useState<Set<any>>(new Set());
   const [print, setPrint] = useState<{ packings: any[]; start: 'labels' | 'receipt' } | null>(null);
@@ -379,6 +380,31 @@ export function PackingList() {
   const canNew = can.menu('packing.new'), canNobill = can.menu('packing.nobill'), canFile = can.menu('packing.bulk'), canEdit = can.menu('packing.search');
   const printSel = async (start: 'labels' | 'receipt') => setPrint({ packings: await Promise.all([...sel].map((id) => api(`/packing/${id}`))), start });
   const set = (k: string, v: any) => { setQ({ ...q, [k]: v }); setSel(new Set()); };
+  const boxesView = <>
+      <div className="row" style={{ margin: '0 0 10px', alignItems: 'center' }}>
+        {!grouped && q.customer_id && <button onClick={() => set('customer_id', null)}><ArrowLeft size={16} aria-hidden /> {t('All customers', 'ทุกลูกค้า', '所有客户')}</button>}
+        <span className="muted">{data ? `${data.length} ${t('boxes', 'กล่อง', '包')}` : ''}{sel.size ? ` · ${t('selected', 'เลือก', '已选')} ${sel.size}` : ''}</span>
+        <span style={{ flex: 1 }} />
+        <button disabled={!sel.size} onClick={() => printSel('labels')}><Printer size={16} aria-hidden /> {t('Print labels', 'ปริ้นป้าย', '打印标签')} ({sel.size})</button>
+        <button disabled={!sel.size} onClick={() => printSel('receipt')}><ReceiptText size={16} aria-hidden /> {t('Goods receipt', 'ใบรับของ', '收货单')} ({sel.size})</button>
+      </div>
+      <Table rows={data} onRow={canEdit ? (r) => setEdit(r.id) : undefined} selectable={() => true} selected={sel} onSelect={setSel} columns={[
+        { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <b>{r.packing_code}</b> },
+        { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 参考号'), render: (r) => <span className="clip">{boxRef(r)}</span> },
+        ...(cust ? [] : [{ key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') }]),
+        { key: 'transport', label: t('Transport', 'รถ/เรือ', '运输'), render: (r) => transportText(r.transport) },
+        { key: 'ctn', label: 'CTN', render: (r) => r.ctn ? `${r.ctn}/${r.no ?? ''}` : '' },
+        { key: 'weight', label: 'kg', align: 'right', sum: true, render: (r) => Number(r.weight) ? money(r.weight) : <Badge tone="warn">{t('not weighed', 'ยังไม่ชั่ง', '未称')}</Badge> },
+        { key: 'dims', label: 'cm', render: (r) => `${r.cubic1}×${r.cubic2}×${r.cubic3}` },
+        { key: 'cbm', label: t('CBM', 'คิว', '立方'), align: 'right', sum: true, digits: 4, render: (r) => cbmText(r) },
+        { key: 'created_at', label: t('Packed', 'แพคเมื่อ', '打包'), render: (r) => r.created_at?.slice(0, 16) },
+        { key: 'st', label: t('Status', 'สถานะ', '状态'), render: (r) => r.off_china_date ? <Badge tone="good">{t('On container', 'ขึ้นตู้แล้ว', '已发')} {r.off_china_date}</Badge> : <Badge>{t('Not shipped', 'ยังไม่ส่ง', '未发货')}</Badge> },
+        { key: 'x', label: '', render: (r) => <span onClick={(e) => e.stopPropagation()} className="row">
+          <button className="link" onClick={async () => setPrint({ packings: [await api(`/packing/${r.id}`)], start: 'labels' })}><Printer size={16} aria-hidden /><span className="sr-only">Print</span></button>
+          {canEdit && !r.off_china_date && <button className="link danger" onClick={async () => { if (await ask(t('Delete this box?', 'ต้องการลบกล่องนี้?', '你确定要删除吗?'), { danger: true }) && await run(() => api(`/packing/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button>}
+        </span> },
+      ]} empty={t('No boxes', 'ไม่มีรายการ', '没有')} />
+  </>;
   return (
     <Page title={t('Packing list', 'แพคของ / PackingList', '打包 / PackingList')}
       actions={<>
@@ -409,7 +435,7 @@ export function PackingList() {
         <div className="row" style={{ margin: '0 0 10px', alignItems: 'center' }}>
           <span className="muted">{groups.data ? `${groups.data.length} ${t('customers', 'ลูกค้า', '客户')} · ${groups.data.reduce((n, g) => n + g.boxes, 0)} ${t('boxes', 'กล่อง', '包')}` : ''}</span>
         </div>
-        <Table rows={groups.data} onRow={(g) => set('customer_id', g.customer_id)} columns={[
+        <Table rows={groups.data} onRow={(g) => { setSel(new Set()); setCust({ id: g.customer_id, code: g.customer_code }); }} columns={[
           { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户'), render: (g) => <b>{g.customer_code}</b> },
           { key: 'boxes', label: t('Boxes', 'จำนวนกล่อง', '包数'), align: 'right', sum: true, digits: 0 },
           { key: 'not_sent', label: t('Not loaded', 'ยังไม่ขึ้นตู้', '未发货'), align: 'right', sum: true, digits: 0 },
@@ -419,31 +445,11 @@ export function PackingList() {
           { key: 'order_nos', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (g) => <span className="clip">{g.order_nos || ''}</span> },
           { key: 'last_packed', label: t('Last packed', 'แพคล่าสุด', '最近打包'), render: (g) => g.last_packed?.slice(0, 16) },
         ]} empty={t('No boxes', 'ไม่มีรายการ', '没有')} />
-      </> : <>
-      <div className="row" style={{ margin: '0 0 10px', alignItems: 'center' }}>
-        {!grouped && q.customer_id && <button onClick={() => set('customer_id', null)}><ArrowLeft size={16} aria-hidden /> {t('All customers', 'ทุกลูกค้า', '所有客户')}</button>}
-        <span className="muted">{data ? `${data.length} ${t('boxes', 'กล่อง', '包')}` : ''}{sel.size ? ` · ${t('selected', 'เลือก', '已选')} ${sel.size}` : ''}</span>
-        <span style={{ flex: 1 }} />
-        <button disabled={!sel.size} onClick={() => printSel('labels')}><Printer size={16} aria-hidden /> {t('Print labels', 'ปริ้นป้าย', '打印标签')} ({sel.size})</button>
-        <button disabled={!sel.size} onClick={() => printSel('receipt')}><ReceiptText size={16} aria-hidden /> {t('Goods receipt', 'ใบรับของ', '收货单')} ({sel.size})</button>
-      </div>
-      <Table rows={data} onRow={canEdit ? (r) => setEdit(r.id) : undefined} selectable={() => true} selected={sel} onSelect={setSel} columns={[
-        { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <b>{r.packing_code}</b> },
-        { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 参考号'), render: (r) => <span className="clip">{boxRef(r)}</span> },
-        { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
-        { key: 'transport', label: t('Transport', 'รถ/เรือ', '运输'), render: (r) => transportText(r.transport) },
-        { key: 'ctn', label: 'CTN', render: (r) => r.ctn ? `${r.ctn}/${r.no ?? ''}` : '' },
-        { key: 'weight', label: 'kg', align: 'right', sum: true, render: (r) => Number(r.weight) ? money(r.weight) : <Badge tone="warn">{t('not weighed', 'ยังไม่ชั่ง', '未称')}</Badge> },
-        { key: 'dims', label: 'cm', render: (r) => `${r.cubic1}×${r.cubic2}×${r.cubic3}` },
-        { key: 'cbm', label: t('CBM', 'คิว', '立方'), align: 'right', sum: true, digits: 4, render: (r) => cbmText(r) },
-        { key: 'created_at', label: t('Packed', 'แพคเมื่อ', '打包'), render: (r) => r.created_at?.slice(0, 16) },
-        { key: 'st', label: t('Status', 'สถานะ', '状态'), render: (r) => r.off_china_date ? <Badge tone="good">{t('On container', 'ขึ้นตู้แล้ว', '已发')} {r.off_china_date}</Badge> : <Badge>{t('Not shipped', 'ยังไม่ส่ง', '未发货')}</Badge> },
-        { key: 'x', label: '', render: (r) => <span onClick={(e) => e.stopPropagation()} className="row">
-          <button className="link" onClick={async () => setPrint({ packings: [await api(`/packing/${r.id}`)], start: 'labels' })}><Printer size={16} aria-hidden /><span className="sr-only">Print</span></button>
-          {canEdit && !r.off_china_date && <button className="link danger" onClick={async () => { if (await ask(t('Delete this box?', 'ต้องการลบกล่องนี้?', '你确定要删除吗?'), { danger: true }) && await run(() => api(`/packing/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button>}
-        </span> },
-      ]} empty={t('No boxes', 'ไม่มีรายการ', '没有')} />
-      </>}
+        <Modal open={!!cust && !edit && !print} xl title={<>{cust?.code} · {t('Boxes', 'รายการกล่อง', '包裹')}</>} onClose={() => { setCust(null); setSel(new Set()); }}
+          footer={<button onClick={() => { setCust(null); setSel(new Set()); }}>{t('Close', 'ปิด', '关闭')}</button>}>
+          {boxesView}
+        </Modal>
+      </> : boxesView}
       {edit && <PackingEditModal id={edit} onClose={() => setEdit(null)} onSaved={reload} />}
       <PackPrint packings={print?.packings || null} start={print?.start} onClose={() => setPrint(null)} />
       {(dialog === 'new' && canNew) && <PackNewModal mode="order" order={sp.get('order') || ''} onClose={closeDialog} onSaved={reload} />}
