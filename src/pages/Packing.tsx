@@ -129,7 +129,7 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
     if (!r) return;
     setLast(r.packings);
     if (lookups.settings.print_after_pack === '1') setPrint({ packings: r.packings, start: mode === 'nobill' ? 'receipt' : 'labels' });
-    setItems([]); setStyles([]); setH({ ...blank, customer_id: h.customer_id, shipment_id: h.shipment_id });
+    setItems([]); setStyles([]); setH({ ...blank, customer_id: h.customer_id });
     waiting.reload(); onSaved();
   };
   const styleName = (id: number) => { const s = lookups.styles.find((x) => x.id === id); return s ? pick(s, lang) : id; };
@@ -161,7 +161,6 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
           <Field label={t('Customer code', 'รหัสลูกค้า', '客户代码') + ' *'}><CustomerPick value={h.customer_id} onChange={(v) => setH({ ...h, customer_id: v })} placeholder={t('Customer code', 'รหัสลูกค้า', '客户代码')} autoFocus /></Field>
           {mode === 'order' && <Field label={t('…or find by order no.', 'หรือค้นจากเลขออเดอร์', '或订单号')}><input value={orderId} onChange={(e) => setOrderId(e.target.value)} /></Field>}
           {mode === 'nobill' && <Field label={t('Number of boxes', 'จำนวนกล่อง / กระสอบ', '包数')} hint={t('One label each', 'สร้างหลายกล่องพร้อมกัน ป้ายละ 1 ใบ', '每包一张标签')}><input type="number" min={1} value={h.boxes} onChange={(e) => setH({ ...h, boxes: e.target.value })} /></Field>}
-          <Field label={t('Shipment round (optional)', 'รอบขนส่ง (ไม่บังคับ)', '发货单')}><ShipmentPick value={h.shipment_id} onChange={(v) => setH({ ...h, shipment_id: v })} /></Field>
           {mode === 'nobill' && <Field label={t('Tracking no. (optional)', 'เลขแทรค (ไม่บังคับ)', '别的单号')}><input value={h.tracking_no} onChange={(e) => setH({ ...h, tracking_no: e.target.value })} /></Field>}
           <Measure v={h} set={setH} />
           {lookups.settings.input_ctn_and_no === '1' && <>
@@ -309,7 +308,6 @@ function PackingEditModal({ id, onClose, onSaved }: { id: number; onClose: () =>
     <Modal open wide title={<>{t('Edit packing', 'แก้ไข Packing', '修改')} {p.packing_code} · {p.customer_code}</>} onClose={onClose}
       footer={<><button onClick={onClose}>{t('Cancel', 'ยกเลิก', '取消')}</button><button className="primary" disabled={busy} onClick={save}>{t('Save', 'บันทึก', '保存')}</button></>}>
       <Grid cols={4}>
-        <Field label={t('Shipment round', 'รอบขนส่ง', '发货单')}><ShipmentPick value={p.shipment_id} onChange={(v) => setData({ ...p, shipment_id: v })} /></Field>
         <Field label="CTN"><input type="number" value={p.ctn ?? ''} onChange={(e) => setData({ ...p, ctn: e.target.value })} /></Field>
         <Field label="No."><input type="number" value={p.no ?? ''} onChange={(e) => setData({ ...p, no: e.target.value })} /></Field>
         <Field label={t('Tracking', 'เลขแทรค', '单号')}><input value={p.tracking_no ?? ''} onChange={(e) => setData({ ...p, tracking_no: e.target.value })} /></Field>
@@ -345,7 +343,7 @@ export function PackingList() {
   const t = useT();
   const can = useCan();
   const [sp, setSp] = useSearchParams();
-  const [q, setQ] = useState<any>({ sent: 'noround', unmeasured: '', customer_id: sp.get('customer') ? Number(sp.get('customer')) : null });
+  const [q, setQ] = useState<any>({ sent: '1', unmeasured: '', customer_id: sp.get('customer') ? Number(sp.get('customer')) : null });
   const { data, reload } = useApi<any[]>('/packing', q);
   const [edit, setEdit] = useState<number | null>(null);
   const [sel, setSel] = useState<Set<any>>(new Set());
@@ -374,8 +372,7 @@ export function PackingList() {
           <Field label={t('Tracking', 'เลขแทรค', '单号')}><input value={q.tracking || ''} onChange={(e) => set('tracking', e.target.value)} /></Field>
           <Field label={t('Status', 'สถานะ', '状态')}>
             <select value={q.sent} onChange={(e) => set('sent', e.target.value)}>
-              <option value="noround">{t('No container yet', 'ยังไม่ได้ assign ตู้', '未分配柜')}</option>
-              <option value="0">{t('Not loaded yet', 'ยังไม่ขึ้นตู้', '未发货')}</option><option value="1">{t('On container', 'ขึ้นตู้แล้ว', '已发')}</option>
+              <option value="1">{t('On container', 'ขึ้นตู้แล้ว', '已发')}</option><option value="0">{t('Not loaded yet', 'ยังไม่ขึ้นตู้', '未发货')}</option>
               <option value="">{t('All', 'ทั้งหมด', '全部')}</option>
             </select>
           </Field>
@@ -431,13 +428,12 @@ function PackingImportModal({ onClose, onSaved }: { onClose: () => void; onSaved
   const t = useT();
   const toast = useToast();
   const [text, setText] = useState('');
-  const [shipment, setShipment] = useState<any>(null);
   const [style, setStyle] = useState<any>(null);
   const [rows, setRows] = useState<any[] | null>(null);
   const { run, busy } = useAction();
   const preview = async () => { const r: any = await run(() => api('/packing/import', { body: { text } }), false); if (r) setRows(r.rows); };
   const commit = async () => {
-    const r: any = await run(() => api('/packing/import', { body: { text, commit: true, shipment_id: shipment, style_id: style } }));
+    const r: any = await run(() => api('/packing/import', { body: { text, commit: true, style_id: style } }));
     if (r) { setRows(null); setText(''); toast(`${r.created.length} ${t('boxes saved', 'กระสอบบันทึกแล้ว', '包已保存')}`); onSaved(); onClose(); }
   };
   return (
@@ -450,7 +446,6 @@ function PackingImportModal({ onClose, onSaved }: { onClose: () => void; onSaved
       <p className="muted" style={{ marginTop: 0 }}>{t('Paste rows or load a .txt/.csv file. Two formats are understood:', 'วางข้อมูลหรือเลือกไฟล์ รองรับ 2 แบบ', '粘贴或选择文件，支持两种格式')}</p>
       <pre className="muted" style={{ whiteSpace: 'pre-wrap' }}>{'1) rowid|ctn|no|PK0001|custId|CODE|weight|width|length|height|CHtracking   (old JJCargo ShipmentN.txt)\n2) CODE,weight,width,length,height,tracking,remark   (CSV or tab separated)'}</pre>
       <Grid cols={3}>
-        <Field label={t('Put on shipment round', 'รอบขนส่ง', '发货单')}><ShipmentPick value={shipment} onChange={setShipment} /></Field>
         <Field label={t('Category for new boxes', 'ประเภทสินค้าสำหรับกระสอบใหม่', '新包的产品分类')}><StylePick value={style} onChange={setStyle} /></Field>
         <Field label={t('File', 'ไฟล์', '文件')}><input type="file" accept=".txt,.csv,.tsv" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setText(await f.text()); setRows(null); } }} /></Field>
         <Field label={t('Rows', 'ข้อมูล', '数据')} wide><textarea rows={8} value={text} onChange={(e) => { setText(e.target.value); setRows(null); }} /></Field>
