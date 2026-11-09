@@ -4,6 +4,8 @@ import { api, useApi, useApp, useCan, useLang, useT, pick, cbm, money } from '..
 import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, StylePick, Badge, Modal, PrintModal, Barcode, Tabs, useAction, useAsk, useToast, Bi } from '../ui';
 import { Printer, ReceiptText, Plus, X, PackagePlus, PackageOpen, FileSpreadsheet } from 'lucide-react';
 
+// One reference per box for lists: order no. first, then tracking, then the box code.
+const boxRef = (r: { order_nos?: string | null; tracking_no?: string | null; packing_code?: string }) => r.order_nos || r.tracking_no || r.packing_code || '';
 const orderLabel = (r: { order_no?: string | null; order_id?: number }) => r.order_no || `#${r.order_id}`;
 const cbmText = (p: any) => cbm({ cubic1: Number(p.cubic1), cubic2: Number(p.cubic2), cubic3: Number(p.cubic3) }).toFixed(4);
 
@@ -279,9 +281,8 @@ export function PackWeigh() {
         <p className="muted" style={{ marginBottom: 0 }}>{t('Type the numbers and press Enter to move down, or tick boxes and fill them all at once above. Press Save once at the end.', 'พิมพ์ตัวเลขแล้วกด Enter เพื่อไปช่องถัดไป หรือติ๊กหลายกล่องแล้วใส่ค่าเดียวกันด้านบน เสร็จแล้วกดบันทึกครั้งเดียว', '输入后按 Enter 跳到下一格，或勾选后批量填写，最后保存')}</p>
       </Card>
       <Table rows={rows} selectable={() => true} selected={sel} onSelect={setSel} rowClass={(r) => (edits[r.id] ? 'on' : '')} columns={[
-        { key: 'packing_code', label: t('Box', 'เลขกล่อง', '包号') },
+        { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 包号'), render: (r) => <b className="clip">{boxRef(r)}</b> },
         { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
-        { key: 'order_nos', label: t('Order no.', 'เลขออเดอร์', '订单号') },
         { key: 'weight', label: 'kg', render: cell('weight') },
         { key: 'cubic1', label: t('W cm', 'กว้าง', '宽'), render: cell('cubic1') },
         { key: 'cubic2', label: t('L cm', 'ยาว', '长'), render: cell('cubic2') },
@@ -390,15 +391,13 @@ export function PackingList() {
         <button disabled={!sel.size} onClick={() => printSel('receipt')}><ReceiptText size={16} aria-hidden /> {t('Goods receipt', 'ใบรับของ', '收货单')} ({sel.size})</button>
       </div>
       <Table rows={data} onRow={canEdit ? (r) => setEdit(r.id) : undefined} selectable={() => true} selected={sel} onSelect={setSel} columns={[
-        { key: 'packing_code', label: t('Box', 'เลขกล่อง', '包号'), render: (r) => <b>{r.packing_code}</b> },
+        { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 包号'), render: (r) => <b className="clip">{boxRef(r)}</b> },
         { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
-        { key: 'order_nos', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (r) => <span className="clip">{r.order_nos || ''}</span> },
         { key: 'shipment_code', label: t('Round', 'รอบ', '发货单') },
         { key: 'ctn', label: 'CTN', render: (r) => r.ctn ? `${r.ctn}/${r.no ?? ''}` : '' },
         { key: 'weight', label: 'kg', align: 'right', sum: true, render: (r) => Number(r.weight) ? money(r.weight) : <Badge tone="warn">{t('not weighed', 'ยังไม่ชั่ง', '未称')}</Badge> },
         { key: 'dims', label: 'cm', render: (r) => `${r.cubic1}×${r.cubic2}×${r.cubic3}` },
         { key: 'cbm', label: t('CBM', 'คิว', '立方'), align: 'right', sum: true, digits: 4, render: (r) => cbmText(r) },
-        { key: 'tracking_no', label: t('Tracking', 'เลขแทรค', '单号') },
         { key: 'created_at', label: t('Packed', 'แพคเมื่อ', '打包'), render: (r) => r.created_at?.slice(0, 16) },
         { key: 'st', label: t('Status', 'สถานะ', '状态'), render: (r) => r.off_china_date ? <Badge tone="good">{t('On container', 'ขึ้นตู้แล้ว', '已发')} {r.off_china_date}</Badge> : <Badge>{t('Not shipped', 'ยังไม่ส่ง', '未发货')}</Badge> },
         { key: 'x', label: '', render: (r) => <span onClick={(e) => e.stopPropagation()} className="row">
