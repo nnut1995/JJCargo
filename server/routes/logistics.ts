@@ -88,7 +88,7 @@ export function logisticsRouter() {
   r.get('/packing', needMenu('packing.search', 'packing.offchina', 'packing.weigh', 'packing.new', 'packing.nobill', 'packing.bulk'), (req, res) => {
     const f = packingFilter(req.query);
     const rows = all<any>(`${PACKING_SELECT} WHERE ${f.where} ORDER BY p.id ${req.query.sort === 'old' ? 'ASC' : 'DESC'} LIMIT 2000`, f.params);
-    res.json(rows.map((x) => ({ ...x, cbm: round2(cubicMeters(x) * 1000) / 1000 })));
+    res.json(rows.map((x) => ({ ...x, cbm: Math.round(cubicMeters(x) * 10000) / 10000 })));
   });
   // one line per customer for the packing-list overview (click through to the boxes)
   r.get('/packing/by-customer', needMenu('packing.search'), (req, res) => {
@@ -101,7 +101,7 @@ export function logisticsRouter() {
            JOIN order_items oi ON oi.id = i.order_item_id JOIN orders o ON o.id = oi.order_id WHERE p2.customer_id = p.customer_id AND p2.id IN (
            SELECT p.id FROM packings p WHERE ${f.where})) AS order_nos
       FROM packings p JOIN customers c ON c.id = p.customer_id WHERE ${f.where} GROUP BY p.customer_id ORDER BY MAX(p.id) DESC LIMIT 2000`, [...f.params, ...f.params]);
-    res.json(rows.map((x) => ({ ...x, cbm: round2((x.cbm || 0) * 1000) / 1000 })));
+    res.json(rows.map((x) => ({ ...x, cbm: Math.round((x.cbm || 0) * 10000) / 10000 })));
   });
   r.get('/packing/:id', (req, res) => res.json(packingDetail(req.params.id)));
   r.post('/packing', needMenu('packing.new', 'packing.nobill'), (req, res) => {

@@ -228,6 +228,8 @@ export interface Col<T = any> {
   align?: 'right' | 'center';
   money?: boolean;
   sum?: boolean;
+  /** decimals for the sum row (default 2) */
+  digits?: number;
   width?: number | string;
 }
 export function Table<T = any>({ columns, rows, onRow, rowKey = 'id', selectable, selected, onSelect, empty, rowClass, maxHeight }: {
@@ -281,7 +283,7 @@ export function Table<T = any>({ columns, rows, onRow, rowKey = 'id', selectable
               {selectable && <td />}
               {columns.map((c, i) => (
                 <td key={c.key} className="num" style={{ textAlign: c.money || c.sum || c.align === 'right' ? 'right' : undefined }}>
-                  {c.sum ? money(list.reduce((s, r: any) => s + (Number(r[c.key]) || 0), 0)) : i === 0 ? <span className="muted">{t('Total', 'รวม', '合计')}</span> : ''}
+                  {c.sum ? money(list.reduce((s, r: any) => s + (Number(r[c.key]) || 0), 0), c.digits ?? 2) : i === 0 ? <span className="muted">{t('Total', 'รวม', '合计')}</span> : ''}
                 </td>
               ))}
             </tr>

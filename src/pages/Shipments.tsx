@@ -396,12 +396,12 @@ export function ShipmentReport() {
       [`Packing list ${data.shipment.code}`, data.shipment.date],
       [],
       [plain(t('Category', 'ประเภทสินค้า', '产品分类')), plain(t('Sacks', 'กระสอบ', '包')), 'kg', 'm³'],
-      ...summary.map((g) => [plain(g.cat), g.sacks, Math.round(g.weight * 100) / 100, Math.round(g.cbm * 1000) / 1000]),
-      [plain(t('Total', 'รวม', '合计')), data.boxes.length, Math.round(sum(data.boxes, 'weight') * 100) / 100, Math.round(sum(data.boxes, 'cbm') * 1000) / 1000],
+      ...summary.map((g) => [plain(g.cat), g.sacks, Math.round(g.weight * 100) / 100, Math.round(g.cbm * 10000) / 10000]),
+      [plain(t('Total', 'รวม', '合计')), data.boxes.length, Math.round(sum(data.boxes, 'weight') * 100) / 100, Math.round(sum(data.boxes, 'cbm') * 10000) / 10000],
     ] },
     { name: plain(t('By customer', 'ตามลูกค้า', '按客户')), widths: [14, 10, 12, 12, 30, 60], rows: [
       [plain(t('Customer', 'ลูกค้า', '客户')), plain(t('Sacks', 'กระสอบ', '包')), 'kg', 'm³', plain(t('Category', 'ประเภทสินค้า', '产品分类')), plain(t('Sack nos.', 'เลขกระสอบ', '包号'))],
-      ...byCustomer.map((c) => [c.code, c.boxes.length, Math.round(c.weight * 100) / 100, Math.round(c.cbm * 1000) / 1000, plain(catsOf(c)), boxCodes(c)]),
+      ...byCustomer.map((c) => [c.code, c.boxes.length, Math.round(c.weight * 100) / 100, Math.round(c.cbm * 10000) / 10000, plain(catsOf(c)), boxCodes(c)]),
     ] },
     { name: 'Packing list', widths: [7, 7, 14, 14, 10, 16, 10, 22, 40], rows: [
       ['CTN', 'No', plain(t('Box', 'เลขกระสอบ', '包号')), plain(t('Customer', 'ลูกค้า', '客户')), 'kg', 'cm', 'm³', plain(t('Category', 'ประเภทสินค้า', '产品分类')), plain(t('Contents', 'สินค้า', '产品'))],
@@ -419,15 +419,15 @@ export function ShipmentReport() {
         <table style={{ maxWidth: 640, marginBottom: 20 }}>
           <thead><tr><th>{t('Category', 'ประเภทสินค้า', '产品分类')}</th><th style={{ textAlign: 'right' }}>{t('Sacks', 'กระสอบ', '包')}</th><th style={{ textAlign: 'right' }}>kg</th><th style={{ textAlign: 'right' }}>m³</th></tr></thead>
           <tbody>{summary.map((g) => (
-            <tr key={g.cat}><td>{g.cat}</td><td style={{ textAlign: 'right' }}>{g.sacks}</td><td style={{ textAlign: 'right' }}>{money(g.weight)}</td><td style={{ textAlign: 'right' }}>{g.cbm.toFixed(3)}</td></tr>
+            <tr key={g.cat}><td>{g.cat}</td><td style={{ textAlign: 'right' }}>{g.sacks}</td><td style={{ textAlign: 'right' }}>{money(g.weight)}</td><td style={{ textAlign: 'right' }}>{g.cbm.toFixed(4)}</td></tr>
           ))}</tbody>
-          <tfoot><tr><td>{t('Total', 'รวม', '合计')}</td><td style={{ textAlign: 'right' }}>{data.boxes.length}</td><td style={{ textAlign: 'right' }}>{money(sum(data.boxes, 'weight'))}</td><td style={{ textAlign: 'right' }}>{sum(data.boxes, 'cbm').toFixed(3)}</td></tr></tfoot>
+          <tfoot><tr><td>{t('Total', 'รวม', '合计')}</td><td style={{ textAlign: 'right' }}>{data.boxes.length}</td><td style={{ textAlign: 'right' }}>{money(sum(data.boxes, 'weight'))}</td><td style={{ textAlign: 'right' }}>{sum(data.boxes, 'cbm').toFixed(4)}</td></tr></tfoot>
         </table>
         <h3>{t('Summary by customer', 'สรุปตามลูกค้า', '按客户汇总')}</h3>
         <table style={{ marginBottom: 20 }}>
           <thead><tr><th>{t('Customer', 'ลูกค้า', '客户')}</th><th style={{ textAlign: 'right' }}>{t('Sacks', 'กระสอบ', '包')}</th><th style={{ textAlign: 'right' }}>kg</th><th style={{ textAlign: 'right' }}>m³</th><th>{t('Category', 'ประเภทสินค้า', '产品分类')}</th><th>{t('Sack nos.', 'เลขกระสอบ', '包号')}</th></tr></thead>
           <tbody>{byCustomer.map((c) => (
-            <tr key={c.code}><td><b>{c.code}</b></td><td style={{ textAlign: 'right' }}>{c.boxes.length}</td><td style={{ textAlign: 'right' }}>{money(c.weight)}</td><td style={{ textAlign: 'right' }}>{c.cbm.toFixed(3)}</td><td>{catsOf(c)}</td><td>{boxCodes(c)}</td></tr>
+            <tr key={c.code}><td><b>{c.code}</b></td><td style={{ textAlign: 'right' }}>{c.boxes.length}</td><td style={{ textAlign: 'right' }}>{money(c.weight)}</td><td style={{ textAlign: 'right' }}>{c.cbm.toFixed(4)}</td><td>{catsOf(c)}</td><td>{boxCodes(c)}</td></tr>
           ))}</tbody>
         </table>
         <h3>{t('All sacks', 'รายการกระสอบทั้งหมด', '全部包')}</h3>
@@ -437,7 +437,7 @@ export function ShipmentReport() {
             <tr key={b.id}><td>{b.ctn}</td><td>{b.no}</td><td>{b.packing_code}</td><td>{b.customer_code}</td><td>{b.weight}</td><td>{b.cubic1}×{b.cubic2}×{b.cubic3}</td><td>{b.cbm.toFixed(4)}</td>
               <td>{catOf(b)}</td><td>{b.contents.map((c: any) => `${pick(c, lang) || '?'} ×${c.qty}`).join(', ')}</td></tr>
           ))}</tbody>
-          <tfoot><tr><td colSpan={4}>{data.boxes.length} {t('boxes', 'กระสอบ', '包')}</td><td>{money(sum(data.boxes, 'weight'))}</td><td /><td>{sum(data.boxes, 'cbm').toFixed(3)}</td><td colSpan={2} /></tr></tfoot>
+          <tfoot><tr><td colSpan={4}>{data.boxes.length} {t('boxes', 'กระสอบ', '包')}</td><td>{money(sum(data.boxes, 'weight'))}</td><td /><td>{sum(data.boxes, 'cbm').toFixed(4)}</td><td colSpan={2} /></tr></tfoot>
         </table>
       </div>
     </Page>
