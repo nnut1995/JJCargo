@@ -230,6 +230,7 @@ export interface Col<T = any> {
   sum?: boolean;
   width?: number | string;
 }
+const TABLE_STEP = 150;
 export function Table<T = any>({ columns, rows, onRow, rowKey = 'id', selectable, selected, onSelect, empty, rowClass, maxHeight }: {
   columns: Col<T>[]; rows?: T[]; onRow?: (r: T) => void; rowKey?: string; selectable?: (r: T) => boolean;
   selected?: Set<any>; onSelect?: (s: Set<any>) => void; empty?: ReactNode; rowClass?: (r: T) => string; maxHeight?: number;
@@ -237,6 +238,22 @@ export function Table<T = any>({ columns, rows, onRow, rowKey = 'id', selectable
   const t = useT();
   const list = rows || [];
   const hasSum = columns.some((c) => c.sum);
+  // Long lists (up to 2000 boxes) render in steps: the first rows show at once, more are added when the end scrolls into view.
+  const [limit, setLimit] = useState(TABLE_STEP);
+  // reset on a new result, not on every render (callers often pass a freshly filtered array)
+  const resetKey = `${list.length}:${(list[0] as any)?.[rowKey] ?? ''}`;
+  useEffect(() => setLimit(TABLE_STEP), [resetKey]);
+  const shown = list.length > limit ? list.slice(0, limit) : list;
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    const el = moreRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((e) => { if (e[0].isIntersecting) setLimit((n) => n + TABLE_STEP); },
+      { root: maxHeight ? wrapRef.current : null, rootMargin: '400px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [shown.length, list.length, maxHeight]);
   const selRows = selectable ? list.filter(selectable) : [];
   const allOn = selRows.length > 0 && selRows.every((r: any) => selected?.has(r[rowKey]));
   const toggle = (id: any) => {
@@ -245,7 +262,7 @@ export function Table<T = any>({ columns, rows, onRow, rowKey = 'id', selectable
     onSelect?.(s);
   };
   return (
-    <div className={`table-wrap${maxHeight ? ' capped' : ''}`} style={maxHeight ? { maxHeight } : undefined}>
+    <div ref={wrapRef} className={`table-wrap${maxHeight ? ' capped' : ''}`} style={maxHeight ? { maxHeight } : undefined}>
       <table>
         <thead>
           <tr>
@@ -255,7 +272,7 @@ export function Table<T = any>({ columns, rows, onRow, rowKey = 'id', selectable
         </thead>
         <tbody>
           {rows === undefined && <tr className="loading-row"><td colSpan={columns.length + (selectable ? 1 : 0)}><div className="skeleton" /><div className="skeleton" /><div className="skeleton short" /></td></tr>}
-          {list.map((r: any, i) => (
+          {shown.map((r: any, i) => (
             <tr key={r[rowKey] ?? i}
               onClick={onRow ? () => onRow(r) : undefined}
               onKeyDown={onRow ? (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) onRow(r); } : undefined}
@@ -273,6 +290,11 @@ export function Table<T = any>({ columns, rows, onRow, rowKey = 'id', selectable
               ))}
             </tr>
           ))}
+          {shown.length < list.length && (
+            <tr ref={moreRef}><td colSpan={columns.length + (selectable ? 1 : 0)} className="muted">
+              {shown.length} / {list.length} <button type="button" className="link" onClick={() => setLimit(list.length)}>{t('Show all', 'แสดงทั้งหมด', '显示全部')}</button>
+            </td></tr>
+          )}
           {rows !== undefined && !list.length && <tr><td colSpan={columns.length + (selectable ? 1 : 0)}><Empty>{empty}</Empty></td></tr>}
         </tbody>
         {hasSum && list.length > 0 && (

@@ -12,14 +12,26 @@ db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
 type Params = Record<string, unknown> | unknown[];
 const norm = (p?: Params) => (p === undefined ? [] : Array.isArray(p) ? p : [p]);
 
+// Prepared statements are reused: compiling SQL costs more than running most of these small queries.
+const stmts = new Map<string, ReturnType<typeof db.prepare>>();
+function prep(sql: string) {
+  let s = stmts.get(sql);
+  if (!s) {
+    if (stmts.size >= 500) stmts.clear(); // dynamic WHERE clauses make a few variants; keep the cache bounded
+    s = db.prepare(sql);
+    stmts.set(sql, s);
+  }
+  return s;
+}
+
 export function all<T = any>(sql: string, p?: Params): T[] {
-  return db.prepare(sql).all(...(norm(p) as any[])) as T[];
+  return prep(sql).all(...(norm(p) as any[])) as T[];
 }
 export function get<T = any>(sql: string, p?: Params): T | undefined {
-  return db.prepare(sql).get(...(norm(p) as any[])) as T | undefined;
+  return prep(sql).get(...(norm(p) as any[])) as T | undefined;
 }
 export function run(sql: string, p?: Params) {
-  const r = db.prepare(sql).run(...(norm(p) as any[]));
+  const r = prep(sql).run(...(norm(p) as any[]));
   return { id: Number(r.lastInsertRowid), changes: Number(r.changes) };
 }
 export function tx<T>(fn: () => T): T {

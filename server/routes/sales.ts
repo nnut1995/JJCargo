@@ -5,6 +5,7 @@ import { HttpError, needMenu, canVerify } from '../auth.js';
 import {
   addBalance, removeBalanceBySource, postCash, unpostCash, customerBalance, orderItemProgress, packageTotals, nextPackageCode, round2, today, type Currency,
 } from '../logic.js';
+import { PACKAGE_TOTALS_COLS, packageTotalsOf } from '../logic.js';
 
 const CUSTOMER_FIELDS = ['code', 'firstname', 'lastname', 'nickname', 'phone', 'email', 'kilo_rate', 'cubic_rate', 'kilo_rate_yuan',
   'cubic_rate_yuan', 'calc_type', 'credit_limit', 'username', 'remark', 'parent_id', 'recommender_id'];
@@ -240,10 +241,11 @@ export function salesRouter() {
     }
     if (req.query.order_id) { w.push('EXISTS (SELECT 1 FROM package_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id WHERE pi.package_id = k.id AND (oi.order_id = ? OR o.order_no LIKE ?))'); p.push(req.query.order_id, `%${req.query.order_id}%`); }
     const rows = all<any>(`SELECT k.*, c.code AS customer_code,
-        (SELECT GROUP_CONCAT(DISTINCT COALESCE(o.order_no, '#' || o.id)) FROM package_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id WHERE pi.package_id = k.id) AS order_nos, sb.bank AS supplier_bank, sb.account_name AS supplier_account
+        (SELECT GROUP_CONCAT(DISTINCT COALESCE(o.order_no, '#' || o.id)) FROM package_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id WHERE pi.package_id = k.id) AS order_nos, sb.bank AS supplier_bank, sb.account_name AS supplier_account,
+        ${PACKAGE_TOTALS_COLS}
       FROM packages k JOIN customers c ON c.id = k.customer_id LEFT JOIN supplier_banks sb ON sb.id = k.supplier_bank_id
       WHERE ${w.join(' AND ')} ORDER BY k.id DESC LIMIT 1000`, p);
-    res.json(rows.map((k) => ({ ...k, ...packageTotals(k.id) })));
+    res.json(rows.map(packageTotalsOf));
   });
   r.get('/packages/next-code', (_req, res) => res.json({ code: nextPackageCode() }));
   r.get('/packages/:id', (req, res) => {
@@ -395,9 +397,9 @@ export function salesRouter() {
     const q = String(req.query.q || '').trim();
     if (!q) return res.json({ items: [], packages: [], statements: [] });
     const items = orderItemProgress('(CAST(oi.order_id AS TEXT) = ? OR o.order_no = ? OR oi.product_id LIKE ?)', [q, q, `%${q}%`]);
-    const packages = all<any>(`SELECT DISTINCT k.*, c.code AS customer_code FROM packages k JOIN customers c ON c.id = k.customer_id
-      LEFT JOIN package_items pi ON pi.package_id = k.id LEFT JOIN order_items oi ON oi.id = pi.order_item_id LEFT JOIN orders o ON o.id = oi.order_id
-      WHERE k.code LIKE ? OR CAST(oi.order_id AS TEXT) = ? OR o.order_no = ? OR oi.product_id LIKE ?`, [`%${q}%`, q, q, `%${q}%`]).map((k) => ({ ...k, ...packageTotals(k.id) }));
+    const packages = all<any>(`SELECT k.*, c.code AS customer_code, ${PACKAGE_TOTALS_COLS} FROM packages k JOIN customers c ON c.id = k.customer_id
+      WHERE k.id IN (SELECT k.id FROM packages k LEFT JOIN package_items pi ON pi.package_id = k.id LEFT JOIN order_items oi ON oi.id = pi.order_item_id LEFT JOIN orders o ON o.id = oi.order_id
+      WHERE k.code LIKE ? OR CAST(oi.order_id AS TEXT) = ? OR o.order_no = ? OR oi.product_id LIKE ?)`, [`%${q}%`, q, q, `%${q}%`]).map(packageTotalsOf);
     const statements = all(`SELECT st.*, k.code AS package_code, oi.product_id FROM package_item_statements st
       JOIN package_items pi ON pi.id = st.package_item_id JOIN packages k ON k.id = pi.package_id JOIN order_items oi ON oi.id = pi.order_item_id
       JOIN orders o ON o.id = oi.order_id WHERE k.code LIKE ? OR CAST(oi.order_id AS TEXT) = ? OR o.order_no = ?`, [`%${q}%`, q, q]);
