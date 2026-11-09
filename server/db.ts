@@ -226,6 +226,7 @@ export function migrate() {
   addColumn('orders', 'order_no', 'TEXT');
   addColumn('shipments', 'status', 'TEXT');
   addColumn('shipments', 'status_date', 'TEXT');
+  addColumn('packings', 'transport', 'TEXT'); // truck | ship (how the box goes to Thailand)
   db.exec('CREATE INDEX IF NOT EXISTS ix_orders_no ON orders(order_no)');
   if (!get('SELECT 1 FROM provinces LIMIT 1')) {
     PROVINCES.forEach((n, i) => run('INSERT INTO provinces (id, name) VALUES (?, ?)', [i + 1, n]));

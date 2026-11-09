@@ -8,6 +8,13 @@ import {
   notifyStatus, type Currency,
 } from '../logic.js';
 
+const TRANSPORTS = ['truck', 'ship'];
+const transportOf = (v: any) => {
+  if (v == null || v === '') return null;
+  if (!TRANSPORTS.includes(v)) throw new HttpError(400, 'transport: truck | ship');
+  return v as string;
+};
+
 const PACKING_SELECT = `SELECT p.*, c.code AS customer_code, c.firstname, s.code AS shipment_code,
   (SELECT COUNT(*) FROM packing_items i WHERE i.packing_id = p.id) AS item_count,
   (SELECT COUNT(*) FROM packing_styles st WHERE st.packing_id = p.id) AS style_count,
@@ -44,9 +51,9 @@ function insertPacking(b: any, user: string) {
   }
   const code = b.packing_code || nextPackingCode();
   if (get('SELECT 1 FROM packings WHERE packing_code = ?', [code])) throw new HttpError(409, `${code} already exists`);
-  const { id } = run(`INSERT INTO packings (packing_code, shipment_id, ctn, no, customer_id, weight, cubic1, cubic2, cubic3, remark, tracking_no, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [code, b.shipment_id || null, b.ctn || null, b.no || null, b.customer_id, Number(b.weight || 0),
-    Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0), b.remark || null, b.tracking_no || null, user]);
+  const { id } = run(`INSERT INTO packings (packing_code, shipment_id, ctn, no, customer_id, weight, cubic1, cubic2, cubic3, remark, tracking_no, transport, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, [code, b.shipment_id || null, b.ctn || null, b.no || null, b.customer_id, Number(b.weight || 0),
+    Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0), b.remark || null, b.tracking_no || null, transportOf(b.transport), user]);
   for (const it of items) run('INSERT INTO packing_items (packing_id, order_item_id, quantity, tracking_no, created_by) VALUES (?,?,?,?,?)',
     [id, it.order_item_id, Number(it.quantity), it.tracking_no || null, user]);
   for (const s of styles) {
@@ -86,6 +93,7 @@ export function logisticsRouter() {
         WHERE i.packing_id = p.id AND (i.tracking_no LIKE ? OR o.order_no LIKE ? OR CAST(oi.order_id AS TEXT) = ?)))`);
       const like = `%${String(q.ref).trim()}%`; p.push(like, like, like, like, String(q.ref).trim().replace(/^#/, ''));
     }
+    if (q.transport) { if (q.transport === 'none') w.push('p.transport IS NULL'); else { w.push('p.transport = ?'); p.push(q.transport); } }
     if (q.unmeasured === '1') w.push('(COALESCE(p.weight,0) = 0 OR COALESCE(p.cubic1,0) * COALESCE(p.cubic2,0) * COALESCE(p.cubic3,0) = 0)');
     if (q.style_id) { w.push('EXISTS (SELECT 1 FROM packing_styles st WHERE st.packing_id = p.id AND st.style_id = ?)'); p.push(q.style_id); }
     return { where: w.join(' AND '), params: p };
@@ -151,10 +159,10 @@ export function logisticsRouter() {
       ['weight', 'cubic1', 'cubic2', 'cubic3', 'rate', 'rate_type', 'shipment_id'].some((k) => k in req.body && req.body[k] != p[k])) {
       throw new HttpError(409, 'สรุปยอดแล้ว — undo the shipping summary for this customer first');
     }
-    run(`UPDATE packings SET shipment_id=?, ctn=?, no=?, weight=?, cubic1=?, cubic2=?, cubic3=?, remark=?, tracking_no=?, rate_type=?, rate=?,
+    run(`UPDATE packings SET shipment_id=?, ctn=?, no=?, weight=?, cubic1=?, cubic2=?, cubic3=?, remark=?, tracking_no=?, transport=?, rate_type=?, rate=?,
       off_china_date=?, updated_by=?, updated_at=CURRENT_TIMESTAMP WHERE id = ?`,
       [b.shipment_id || null, b.ctn || null, b.no || null, Number(b.weight || 0), Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0),
-        b.remark || null, b.tracking_no || null, b.rate_type || null, b.rate === '' || b.rate == null ? null : Number(b.rate),
+        b.remark || null, b.tracking_no || null, transportOf(b.transport), b.rate_type || null, b.rate === '' || b.rate == null ? null : Number(b.rate),
         b.shipment_id ? b.off_china_date || null : null, req.user.username, p.id]);
     audit(req.user.username, 'update', 'packings', p.id, req.body);
     res.json(packingDetail(p.id));
@@ -226,8 +234,8 @@ export function logisticsRouter() {
     const styleId = req.body.style_id ? Number(req.body.style_id) : null;
     const result = tx(() => rows.filter((r) => r.customer_id).map((r) => {
       if (r.existing_id) {
-        run('UPDATE packings SET weight=?, cubic1=?, cubic2=?, cubic3=?, ctn=COALESCE(?,ctn), no=COALESCE(?,no), tracking_no=COALESCE(?,tracking_no), shipment_id=COALESCE(?,shipment_id) WHERE id = ?',
-          [r.weight, r.cubic1, r.cubic2, r.cubic3, r.ctn, r.no, r.tracking_no, req.body.shipment_id || null, r.existing_id]);
+        run('UPDATE packings SET weight=?, cubic1=?, cubic2=?, cubic3=?, ctn=COALESCE(?,ctn), no=COALESCE(?,no), tracking_no=COALESCE(?,tracking_no), transport=COALESCE(?,transport), shipment_id=COALESCE(?,shipment_id) WHERE id = ?',
+          [r.weight, r.cubic1, r.cubic2, r.cubic3, r.ctn, r.no, r.tracking_no, transportOf(req.body.transport), req.body.shipment_id || null, r.existing_id]);
         return { id: r.existing_id, code: r.packing_code };
       }
       const styles = styleId ? [{ style_id: styleId, quantity: 1 }] : [];
@@ -237,7 +245,7 @@ export function logisticsRouter() {
         if (!s) throw new HttpError(400, 'Create at least one product category first');
         styles.push({ style_id: s.id, quantity: 1 });
       }
-      return insertPacking({ ...r, shipment_id: req.body.shipment_id || null, styles }, req.user.username);
+      return insertPacking({ ...r, transport: req.body.transport, shipment_id: req.body.shipment_id || null, styles }, req.user.username);
     }));
     audit(req.user.username, 'import', 'packings', undefined, { count: result.length });
     res.json({ rows, created: result });

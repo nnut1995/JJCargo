@@ -6,6 +6,19 @@ import { Printer, ReceiptText, Plus, X, PackagePlus, PackageOpen, FileSpreadshee
 
 // One reference per box for lists: order no. first, then tracking, then the box code.
 const boxRef = (r: { order_nos?: string | null; tracking_no?: string | null; packing_code?: string }) => r.order_nos || r.tracking_no || r.packing_code || '';
+// How the box travels to Thailand (packings.transport)
+function TransportPick({ value, onChange, all }: { value: string | null | undefined; onChange: (v: string) => void; all?: boolean }) {
+  const t = useT();
+  return (
+    <select value={value || ''} onChange={(e) => onChange(e.target.value)}>
+      <option value="">{all ? t('All', 'ทั้งหมด', '全部') : '—'}</option>
+      <option value="truck">{t('Truck', 'รถ', '陆运')}</option>
+      <option value="ship">{t('Ship', 'เรือ', '海运')}</option>
+      {all && <option value="none">{t('Not set', 'ยังไม่ระบุ', '未选')}</option>}
+    </select>
+  );
+}
+const useTransportText = () => { const t = useT(); return (v?: string | null) => v === 'truck' ? t('Truck', 'รถ', '陆运') : v === 'ship' ? t('Ship', 'เรือ', '海运') : ''; };
 const orderLabel = (r: { order_no?: string | null; order_id?: number }) => r.order_no || `#${r.order_id}`;
 const cbmText = (p: any) => cbm({ cubic1: Number(p.cubic1), cubic2: Number(p.cubic2), cubic3: Number(p.cubic3) }).toFixed(4);
 
@@ -25,6 +38,7 @@ export function LabelDoc({ packings }: { packings: any[] }) {
             <span>{p.cubic1}×{p.cubic2}×{p.cubic3} cm</span>
             <span><b>{cbmText(p)} cbm</b></span>
             <span>{p.ctn ? `CTN ${p.ctn}/${p.no ?? ''}` : ''}</span>
+            {p.transport && <span><b>{p.transport === 'truck' ? 'รถ 陆运' : 'เรือ 海运'}</b></span>}
           </div>
           <div style={{ fontSize: 12, marginTop: 4 }}>
             {[...(p.items || []).map((i: any) => `${orderLabel(i)} ${i.product_id || ''} ×${i.quantity}`),
@@ -131,7 +145,7 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
     if (!r) return;
     setLast(r.packings);
     if (lookups.settings.print_after_pack === '1') setPrint({ packings: r.packings, start: mode === 'nobill' ? 'receipt' : 'labels' });
-    setItems([]); setStyles([]); setH({ ...blank, customer_id: h.customer_id });
+    setItems([]); setStyles([]); setH({ ...blank, customer_id: h.customer_id, transport: h.transport });
     waiting.reload(); onSaved();
   };
   const styleName = (id: number) => { const s = lookups.styles.find((x) => x.id === id); return s ? pick(s, lang) : id; };
@@ -164,6 +178,7 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
           {mode === 'order' && <Field label={t('…or find by order no.', 'หรือค้นจากเลขออเดอร์', '或订单号')}><input value={orderId} onChange={(e) => setOrderId(e.target.value)} /></Field>}
           {mode === 'nobill' && <Field label={t('Number of boxes', 'จำนวนกล่อง / กระสอบ', '包数')} hint={t('One label each', 'สร้างหลายกล่องพร้อมกัน ป้ายละ 1 ใบ', '每包一张标签')}><input type="number" min={1} value={h.boxes} onChange={(e) => setH({ ...h, boxes: e.target.value })} /></Field>}
           {mode === 'nobill' && <Field label={t('Tracking no. (optional)', 'เลขแทรค (ไม่บังคับ)', '别的单号')}><input value={h.tracking_no} onChange={(e) => setH({ ...h, tracking_no: e.target.value })} /></Field>}
+          <Field label={t('Transport', 'ส่งทาง รถ / เรือ', '运输方式')}><TransportPick value={h.transport} onChange={(v) => setH({ ...h, transport: v })} /></Field>
           <Measure v={h} set={setH} />
           {lookups.settings.input_ctn_and_no === '1' && <>
             <Field label="CTN"><input type="number" value={h.ctn} onChange={(e) => setH({ ...h, ctn: e.target.value })} /></Field>
@@ -312,6 +327,7 @@ function PackingEditModal({ id, onClose, onSaved }: { id: number; onClose: () =>
         <Field label="CTN"><input type="number" value={p.ctn ?? ''} onChange={(e) => setData({ ...p, ctn: e.target.value })} /></Field>
         <Field label="No."><input type="number" value={p.no ?? ''} onChange={(e) => setData({ ...p, no: e.target.value })} /></Field>
         <Field label={t('Tracking', 'เลขแทรค', '单号')}><input value={p.tracking_no ?? ''} onChange={(e) => setData({ ...p, tracking_no: e.target.value })} /></Field>
+        <Field label={t('Transport', 'ส่งทาง รถ / เรือ', '运输方式')}><TransportPick value={p.transport} onChange={(v) => setData({ ...p, transport: v })} /></Field>
         <Measure v={p} set={setData} />
         <Field label={t('Remark', 'หมายเหตุ', '备注')} wide><input value={p.remark ?? ''} onChange={(e) => setData({ ...p, remark: e.target.value })} /></Field>
       </Grid>
@@ -342,6 +358,7 @@ type PackDialog = 'new' | 'nobill' | 'file';
 /** Packing list (main packing screen): every box with filters, plus dialogs to pack, receive without bill and pack from file. */
 export function PackingList() {
   const t = useT();
+  const transportText = useTransportText();
   const can = useCan();
   const [sp, setSp] = useSearchParams();
   const [q, setQ] = useState<any>({ sent: '0', unmeasured: '', customer_id: sp.get('customer') ? Number(sp.get('customer')) : null });
@@ -369,6 +386,7 @@ export function PackingList() {
           <Field label={t('Customer code', 'รหัสลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => set('customer_id', v)} /></Field>
           <Field label={t('Shipment round', 'รอบขนส่ง', '发货单')}><ShipmentPick value={q.shipment_id} onChange={(v) => set('shipment_id', v)} placeholder={t('All rounds', '--ทุกรอบขนส่ง--', '所有的发货单')} /></Field>
           <Field label={t('Order / tracking / box no.', 'เลขออเดอร์ / แทรค / เลขกล่อง', '订单号 / 单号 / 包号')}><input value={q.ref || ''} onChange={(e) => set('ref', e.target.value)} /></Field>
+          <Field label={t('Transport', 'ส่งทาง รถ / เรือ', '运输方式')}><TransportPick all value={q.transport} onChange={(v) => set('transport', v)} /></Field>
           <Field label={t('Status', 'สถานะ', '状态')}>
             <select value={q.sent} onChange={(e) => set('sent', e.target.value)}>
               <option value="0">{t('Not loaded yet', 'ยังไม่ขึ้นตู้', '未发货')}</option><option value="1">{t('On container', 'ขึ้นตู้แล้ว', '已发')}</option>
@@ -391,6 +409,7 @@ export function PackingList() {
       <Table rows={data} onRow={canEdit ? (r) => setEdit(r.id) : undefined} selectable={() => true} selected={sel} onSelect={setSel} columns={[
         { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 包号'), render: (r) => <b className="clip">{boxRef(r)}</b> },
         { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
+        { key: 'transport', label: t('Transport', 'รถ/เรือ', '运输'), render: (r) => transportText(r.transport) },
         { key: 'shipment_code', label: t('Round', 'รอบ', '发货单') },
         { key: 'ctn', label: 'CTN', render: (r) => r.ctn ? `${r.ctn}/${r.no ?? ''}` : '' },
         { key: 'weight', label: 'kg', align: 'right', sum: true, render: (r) => Number(r.weight) ? money(r.weight) : <Badge tone="warn">{t('not weighed', 'ยังไม่ชั่ง', '未称')}</Badge> },
@@ -426,11 +445,12 @@ function PackingImportModal({ onClose, onSaved }: { onClose: () => void; onSaved
   const toast = useToast();
   const [text, setText] = useState('');
   const [style, setStyle] = useState<any>(null);
+  const [transport, setTransport] = useState('');
   const [rows, setRows] = useState<any[] | null>(null);
   const { run, busy } = useAction();
   const preview = async () => { const r: any = await run(() => api('/packing/import', { body: { text } }), false); if (r) setRows(r.rows); };
   const commit = async () => {
-    const r: any = await run(() => api('/packing/import', { body: { text, commit: true, style_id: style } }));
+    const r: any = await run(() => api('/packing/import', { body: { text, commit: true, style_id: style, transport } }));
     if (r) { setRows(null); setText(''); toast(`${r.created.length} ${t('boxes saved', 'กระสอบบันทึกแล้ว', '包已保存')}`); onSaved(); onClose(); }
   };
   return (
@@ -444,6 +464,7 @@ function PackingImportModal({ onClose, onSaved }: { onClose: () => void; onSaved
       <pre className="muted" style={{ whiteSpace: 'pre-wrap' }}>{'1) rowid|ctn|no|PK0001|custId|CODE|weight|width|length|height|CHtracking   (old JJCargo ShipmentN.txt)\n2) CODE,weight,width,length,height,tracking,remark   (CSV or tab separated)'}</pre>
       <Grid cols={3}>
         <Field label={t('Category for new boxes', 'ประเภทสินค้าสำหรับกระสอบใหม่', '新包的产品分类')}><StylePick value={style} onChange={setStyle} /></Field>
+        <Field label={t('Transport', 'ส่งทาง รถ / เรือ', '运输方式')}><TransportPick value={transport} onChange={setTransport} /></Field>
         <Field label={t('File', 'ไฟล์', '文件')}><input type="file" accept=".txt,.csv,.tsv" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setText(await f.text()); setRows(null); } }} /></Field>
         <Field label={t('Rows', 'ข้อมูล', '数据')} wide><textarea rows={8} value={text} onChange={(e) => { setText(e.target.value); setRows(null); }} /></Field>
       </Grid>
