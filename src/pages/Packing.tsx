@@ -297,6 +297,7 @@ export function PackWeigh() {
       </Card>
       <Table rows={rows} selectable={() => true} selected={sel} onSelect={setSel} rowClass={(r) => (edits[r.id] ? 'on' : '')} columns={[
         { key: 'packing_code', label: t('Box', 'เลขกล่อง', '包号'), render: (r) => <b>{r.packing_code}</b> },
+        { key: 'shipment_code', label: t('Round (shipment code)', 'รอบขนส่ง (shipment code)', '发货单'), render: (r) => r.shipment_code || <span className="muted">—</span> },
         { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 包号'), render: (r) => <b className="clip">{boxRef(r)}</b> },
         { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
         { key: 'weight', label: 'kg', render: cell('weight') },
@@ -304,7 +305,6 @@ export function PackWeigh() {
         { key: 'cubic2', label: t('L cm', 'ยาว', '长'), render: cell('cubic2') },
         { key: 'cubic3', label: t('H cm', 'สูง', '高'), render: cell('cubic3') },
         { key: 'cbm', label: t('CBM', 'คิว', '立方'), align: 'right', render: (r) => cbmText(r) },
-        { key: 'shipment_code', label: t('Round', 'รอบ', '发货单') },
         { key: 'created_at', label: t('Received', 'รับเมื่อ', '收货'), render: (r) => r.created_at?.slice(0, 16) },
       ]} empty={t('All boxes have weight and size', 'ทุกกล่องชั่ง/วัดครบแล้ว', '全部已称重')} />
       <PackPrint packings={print} onClose={() => setPrint(null)} />
@@ -409,10 +409,10 @@ export function PackingList() {
       </div>
       <Table rows={data} onRow={canEdit ? (r) => setEdit(r.id) : undefined} selectable={() => true} selected={sel} onSelect={setSel} columns={[
         { key: 'packing_code', label: t('Box', 'เลขกล่อง', '包号'), render: (r) => <b>{r.packing_code}</b> },
+        { key: 'shipment_code', label: t('Round (shipment code)', 'รอบขนส่ง (shipment code)', '发货单'), render: (r) => r.shipment_code || <span className="muted">—</span> },
         { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 包号'), render: (r) => <b className="clip">{boxRef(r)}</b> },
         { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
         { key: 'transport', label: t('Transport', 'รถ/เรือ', '运输'), render: (r) => transportText(r.transport) },
-        { key: 'shipment_code', label: t('Round', 'รอบ', '发货单') },
         { key: 'ctn', label: 'CTN', render: (r) => r.ctn ? `${r.ctn}/${r.no ?? ''}` : '' },
         { key: 'weight', label: 'kg', align: 'right', sum: true, render: (r) => Number(r.weight) ? money(r.weight) : <Badge tone="warn">{t('not weighed', 'ยังไม่ชั่ง', '未称')}</Badge> },
         { key: 'dims', label: 'cm', render: (r) => `${r.cubic1}×${r.cubic2}×${r.cubic3}` },
