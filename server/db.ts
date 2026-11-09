@@ -140,6 +140,11 @@ CREATE TABLE IF NOT EXISTS packing_styles (
   id INTEGER PRIMARY KEY, packing_id INTEGER NOT NULL REFERENCES packings(id) ON DELETE CASCADE,
   style_id INTEGER NOT NULL REFERENCES styles(id), quantity REAL NOT NULL
 );
+-- secondary customers on a box (for tracking only; shipping is charged to packings.customer_id)
+CREATE TABLE IF NOT EXISTS packing_customers (
+  packing_id INTEGER NOT NULL REFERENCES packings(id) ON DELETE CASCADE, customer_id INTEGER NOT NULL REFERENCES customers(id),
+  PRIMARY KEY (packing_id, customer_id)
+);
 CREATE TABLE IF NOT EXISTS shipment_other_amounts (
   id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers(id), shipment_id INTEGER NOT NULL REFERENCES shipments(id),
   detail TEXT, amount REAL NOT NULL, created_by TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP

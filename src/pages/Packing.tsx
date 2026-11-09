@@ -18,6 +18,21 @@ function TransportPick({ value, onChange, all }: { value: string | null | undefi
     </select>
   );
 }
+// Extra customers on a box, for tracking only (shipping stays with the main customer)
+function OtherCustomersPick({ value, main, onChange }: { value: number[] | undefined; main: any; onChange: (ids: number[]) => void }) {
+  const t = useT();
+  const { lookups } = useApp();
+  const ids = (value || []).filter((x) => x !== main);
+  const code = (id: number) => lookups.customers.find((c) => c.id === id)?.code || `#${id}`;
+  return (
+    <div>
+      <CustomerPick value={null} onChange={(v) => { if (v && v !== main && !ids.includes(v)) onChange([...ids, v]); }} placeholder={t('Add customer', '+ เพิ่มลูกค้ารอง', '+ 添加客户')} />
+      {ids.length > 0 && <div className="row" style={{ flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+        {ids.map((id) => <Badge key={id}>{code(id)} <button className="link" onClick={() => onChange(ids.filter((x) => x !== id))} aria-label={`remove ${code(id)}`}><X size={12} aria-hidden /></button></Badge>)}
+      </div>}
+    </div>
+  );
+}
 const useTransportText = () => { const t = useT(); return (v?: string | null) => v === 'truck' ? t('Truck', 'รถ', '陆运') : v === 'ship' ? t('Ship', 'เรือ', '海运') : ''; };
 const orderLabel = (r: { order_no?: string | null; order_id?: number }) => r.order_no || `#${r.order_id}`;
 const cbmText = (p: any) => cbm({ cubic1: Number(p.cubic1), cubic2: Number(p.cubic2), cubic3: Number(p.cubic3) }).toFixed(4);
@@ -180,6 +195,7 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
           {mode === 'nobill' && <Field label={t('Number of boxes', 'จำนวนกล่อง / กระสอบ', '包数')} hint={t('One label each', 'สร้างหลายกล่องพร้อมกัน ป้ายละ 1 ใบ', '每包一张标签')}><input type="number" min={1} value={h.boxes} onChange={(e) => setH({ ...h, boxes: e.target.value })} /></Field>}
           {mode === 'nobill' && <Field label={t('Tracking no. (optional)', 'เลขแทรค (ไม่บังคับ)', '别的单号')}><input value={h.tracking_no} onChange={(e) => setH({ ...h, tracking_no: e.target.value })} /></Field>}
           <Field label={t('Transport', 'ส่งทาง รถ / เรือ', '运输方式')}><TransportPick value={h.transport} onChange={(v) => setH({ ...h, transport: v })} /></Field>
+          <Field label={t('Other customers (tracking only)', 'ลูกค้ารอง (ไว้ติดตาม ไม่คิดเงิน)', '其他客户（仅跟踪）')}><OtherCustomersPick value={h.other_customer_ids} main={h.customer_id} onChange={(v) => setH({ ...h, other_customer_ids: v })} /></Field>
           <Measure v={h} set={setH} />
           {lookups.settings.input_ctn_and_no === '1' && <>
             <Field label="CTN"><input type="number" value={h.ctn} onChange={(e) => setH({ ...h, ctn: e.target.value })} /></Field>
@@ -329,6 +345,7 @@ function PackingEditModal({ id, onClose, onSaved }: { id: number; onClose: () =>
         <Field label="No."><input type="number" value={p.no ?? ''} onChange={(e) => setData({ ...p, no: e.target.value })} /></Field>
         <Field label={t('Tracking', 'เลขแทรค', '单号')}><input value={p.tracking_no ?? ''} onChange={(e) => setData({ ...p, tracking_no: e.target.value })} /></Field>
         <Field label={t('Transport', 'ส่งทาง รถ / เรือ', '运输方式')}><TransportPick value={p.transport} onChange={(v) => setData({ ...p, transport: v })} /></Field>
+        <Field label={t('Other customers (tracking only)', 'ลูกค้ารอง (ไว้ติดตาม ไม่คิดเงิน)', '其他客户（仅跟踪）')}><OtherCustomersPick value={p.other_customer_ids} main={p.customer_id} onChange={(v) => setData({ ...p, other_customer_ids: v })} /></Field>
         <Measure v={p} set={setData} />
         <Field label={t('Remark', 'หมายเหตุ', '备注')} wide><input value={p.remark ?? ''} onChange={(e) => setData({ ...p, remark: e.target.value })} /></Field>
       </Grid>
@@ -391,7 +408,10 @@ export function PackingList() {
       <Table rows={data} onRow={canEdit ? (r) => setEdit(r.id) : undefined} selectable={() => true} selected={sel} onSelect={setSel} columns={[
         { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <b>{r.packing_code}</b> },
         { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 参考号'), render: (r) => <span className="clip">{boxRef(r)}</span> },
-        ...(cust ? [] : [{ key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') }]),
+        { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户'), render: (r) => <>
+          {cust && r.customer_id !== cust.id ? <Badge>{t('secondary', 'ลูกค้ารอง', '次要')} · {t('main', 'หลัก', '主')} {r.customer_code}</Badge> : <b>{r.customer_code}</b>}
+          {r.other_customers && <div className="muted" style={{ fontSize: 12 }}>+ {r.other_customers}</div>}
+        </> },
         { key: 'transport', label: t('Transport', 'รถ/เรือ', '运输'), render: (r) => transportText(r.transport) },
         { key: 'ctn', label: 'CTN', render: (r) => r.ctn ? `${r.ctn}/${r.no ?? ''}` : '' },
         { key: 'weight', label: 'kg', align: 'right', sum: true, render: (r) => Number(r.weight) ? money(r.weight) : <Badge tone="warn">{t('not weighed', 'ยังไม่ชั่ง', '未称')}</Badge> },

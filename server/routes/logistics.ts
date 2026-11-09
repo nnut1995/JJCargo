@@ -19,13 +19,24 @@ const PACKING_SELECT = `SELECT p.*, c.code AS customer_code, c.firstname, s.code
   (SELECT COUNT(*) FROM packing_items i WHERE i.packing_id = p.id) AS item_count,
   (SELECT COUNT(*) FROM packing_styles st WHERE st.packing_id = p.id) AS style_count,
   (SELECT GROUP_CONCAT(DISTINCT COALESCE(o.order_no, '#' || o.id)) FROM packing_items i JOIN order_items oi ON oi.id = i.order_item_id
-     JOIN orders o ON o.id = oi.order_id WHERE i.packing_id = p.id) AS order_nos
+     JOIN orders o ON o.id = oi.order_id WHERE i.packing_id = p.id) AS order_nos,
+  (SELECT GROUP_CONCAT(c2.code, ', ') FROM packing_customers pc JOIN customers c2 ON c2.id = pc.customer_id WHERE pc.packing_id = p.id) AS other_customers
   FROM packings p JOIN customers c ON c.id = p.customer_id LEFT JOIN shipments s ON s.id = p.shipment_id`;
+
+/** Replace a box's secondary customers (the main customer is never stored here). */
+function setOtherCustomers(packingId: number, mainCustomerId: number, ids: any) {
+  if (!Array.isArray(ids)) return;
+  run('DELETE FROM packing_customers WHERE packing_id = ?', [packingId]);
+  for (const cid of new Set(ids.map(Number).filter((x) => x > 0 && x !== Number(mainCustomerId)))) {
+    run('INSERT INTO packing_customers (packing_id, customer_id) VALUES (?, ?)', [packingId, cid]);
+  }
+}
 
 function packingDetail(id: number | string) {
   const p = get<any>(`${PACKING_SELECT} WHERE p.id = ? OR p.packing_code = ? OR p.reference_id = ?`, [id, id, id]);
   if (!p) throw new HttpError(404, 'ไม่มีเลขกระสอบนี้ / 没有这个包号');
   p.cbm = cubicMeters(p);
+  p.other_customer_ids = all<{ customer_id: number }>('SELECT customer_id FROM packing_customers WHERE packing_id = ?', [p.id]).map((x) => x.customer_id);
   p.items = all(`SELECT pi.*, oi.order_id, o.order_no, oi.product_id, s.th AS style_th, s.zh AS style_zh, s.en AS style_en
     FROM packing_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id LEFT JOIN styles s ON s.id = oi.style_id WHERE pi.packing_id = ?`, [p.id]);
   p.styles = all(`SELECT ps.*, s.th AS style_th, s.zh AS style_zh, s.en AS style_en, u.description AS unit FROM packing_styles ps
@@ -54,6 +65,7 @@ function insertPacking(b: any, user: string) {
   const { id } = run(`INSERT INTO packings (packing_code, reference_id, shipment_id, ctn, no, customer_id, weight, cubic1, cubic2, cubic3, remark, tracking_no, transport, created_by)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [code, nextReferenceId(), b.shipment_id || null, b.ctn || null, b.no || null, b.customer_id, Number(b.weight || 0),
     Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0), b.remark || null, b.tracking_no || null, transportOf(b.transport), user]);
+  setOtherCustomers(id, b.customer_id, b.other_customer_ids);
   for (const it of items) run('INSERT INTO packing_items (packing_id, order_item_id, quantity, tracking_no, created_by) VALUES (?,?,?,?,?)',
     [id, it.order_item_id, Number(it.quantity), it.tracking_no || null, user]);
   for (const s of styles) {
@@ -81,7 +93,9 @@ export function logisticsRouter() {
   });
   function packingFilter(q: any) {
     const w = ['1=1']; const p: any[] = [];
-    if (q.customer_id) { w.push('p.customer_id = ?'); p.push(q.customer_id); }
+    if (q.customer_id) { // main or secondary customer
+      w.push('(p.customer_id = ? OR EXISTS (SELECT 1 FROM packing_customers pc WHERE pc.packing_id = p.id AND pc.customer_id = ?))'); p.push(q.customer_id, q.customer_id);
+    }
     if (q.shipment_id) { w.push('p.shipment_id = ?'); p.push(q.shipment_id); }
     if (q.sent === '1') w.push('p.off_china_date IS NOT NULL');
     if (q.sent === '0') w.push('p.off_china_date IS NULL');
@@ -164,6 +178,7 @@ export function logisticsRouter() {
       [b.shipment_id || null, b.ctn || null, b.no || null, Number(b.weight || 0), Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0),
         b.remark || null, b.tracking_no || null, transportOf(b.transport), b.rate_type || null, b.rate === '' || b.rate == null ? null : Number(b.rate),
         b.shipment_id ? b.off_china_date || null : null, req.user.username, p.id]);
+    if ('other_customer_ids' in req.body) setOtherCustomers(p.id, b.customer_id, req.body.other_customer_ids);
     audit(req.user.username, 'update', 'packings', p.id, req.body);
     res.json(packingDetail(p.id));
   });

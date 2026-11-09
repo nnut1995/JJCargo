@@ -110,6 +110,13 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { transport: 'ship' } });
   assert.ok((await call('/packing?transport=ship')).some((x: any) => x.id === pkOrd.created[0].id));
   await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { transport: 'plane' }, expect: 400 });
+  // secondary customers: box shows up under them too, shipping stays with the main customer
+  await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { other_customer_ids: [a.id, b.id] } });
+  const withOther = await call(`/packing/${pkOrd.created[0].id}`);
+  assert.deepEqual(withOther.other_customer_ids, [a.id]); // main customer is never stored as secondary
+  assert.ok((await call(`/packing?customer_id=${a.id}`)).some((x: any) => x.id === pkOrd.created[0].id && x.other_customers === 'M4-001'));
+  await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { other_customer_ids: [] } });
+  assert.ok(!(await call(`/packing?customer_id=${a.id}`)).some((x: any) => x.id === pkOrd.created[0].id));
   const over = await call('/packing/by-customer');
   const ob = over.find((x: any) => x.customer_id === b.id);
   assert.equal(ob.boxes, 6);
