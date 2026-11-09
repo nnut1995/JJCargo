@@ -77,9 +77,12 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   ] } });
   // packing can go up to the ordered qty (20) even though only 15 were billed: 5 left, so 6 is too many
   await call('/packing', { body: { customer_id: a.id, items: [{ order_item_id: o.items[1].id, quantity: 6 }] }, expect: 409 });
-  // box reference = yyyymm + running number, e.g. 2026110001
+  // box code = PK + running no.; reference id = yyyymm + monthly running no., e.g. 2026110001
   const ym = `${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-  assert.match(pk1.created[0].code, new RegExp(`^${ym}\\d{4}$`));
+  assert.match(pk1.created[0].code, /^PK\d{4,}$/);
+  const ref1 = (await call(`/packing/${pk1.created[0].id}`)).reference_id;
+  assert.match(ref1, new RegExp(`^${ym}\\d{4}$`));
+  assert.ok((await call(`/packing?ref=${ref1}`)).some((x: any) => x.id === pk1.created[0].id));
   const nb = await call('/packing', { body: { customer_id: b.id, weight: 51.12, cubic1: 40, cubic2: 90, cubic3: 90, tracking_no: 'CH83207', boxes: 2, styles: [{ style_id: clothes.id, quantity: 100 }] } });
   assert.equal(nb.created.length, 2);
 

@@ -4,7 +4,7 @@ import { all, get, run, tx, audit } from '../db.js';
 import { HttpError, needMenu } from '../auth.js';
 import { SHIPMENT_STATUS_KEYS } from '../../shared/statuses.js';
 import {
-  addBalance, removeBalanceBySource, orderItemProgress, nextPackingCode, shipmentCustomerCharges, cubicMeters, round2, today,
+  addBalance, removeBalanceBySource, orderItemProgress, nextPackingCode, nextReferenceId, shipmentCustomerCharges, cubicMeters, round2, today,
   notifyStatus, type Currency,
 } from '../logic.js';
 
@@ -23,7 +23,7 @@ const PACKING_SELECT = `SELECT p.*, c.code AS customer_code, c.firstname, s.code
   FROM packings p JOIN customers c ON c.id = p.customer_id LEFT JOIN shipments s ON s.id = p.shipment_id`;
 
 function packingDetail(id: number | string) {
-  const p = get<any>(`${PACKING_SELECT} WHERE p.id = ? OR p.packing_code = ?`, [id, id]);
+  const p = get<any>(`${PACKING_SELECT} WHERE p.id = ? OR p.packing_code = ? OR p.reference_id = ?`, [id, id, id]);
   if (!p) throw new HttpError(404, 'ไม่มีเลขกระสอบนี้ / 没有这个包号');
   p.cbm = cubicMeters(p);
   p.items = all(`SELECT pi.*, oi.order_id, o.order_no, oi.product_id, s.th AS style_th, s.zh AS style_zh, s.en AS style_en
@@ -51,8 +51,8 @@ function insertPacking(b: any, user: string) {
   }
   const code = b.packing_code || nextPackingCode();
   if (get('SELECT 1 FROM packings WHERE packing_code = ?', [code])) throw new HttpError(409, `${code} already exists`);
-  const { id } = run(`INSERT INTO packings (packing_code, shipment_id, ctn, no, customer_id, weight, cubic1, cubic2, cubic3, remark, tracking_no, transport, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, [code, b.shipment_id || null, b.ctn || null, b.no || null, b.customer_id, Number(b.weight || 0),
+  const { id } = run(`INSERT INTO packings (packing_code, reference_id, shipment_id, ctn, no, customer_id, weight, cubic1, cubic2, cubic3, remark, tracking_no, transport, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [code, nextReferenceId(), b.shipment_id || null, b.ctn || null, b.no || null, b.customer_id, Number(b.weight || 0),
     Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0), b.remark || null, b.tracking_no || null, transportOf(b.transport), user]);
   for (const it of items) run('INSERT INTO packing_items (packing_id, order_item_id, quantity, tracking_no, created_by) VALUES (?,?,?,?,?)',
     [id, it.order_item_id, Number(it.quantity), it.tracking_no || null, user]);
@@ -85,13 +85,13 @@ export function logisticsRouter() {
     if (q.shipment_id) { w.push('p.shipment_id = ?'); p.push(q.shipment_id); }
     if (q.sent === '1') w.push('p.off_china_date IS NOT NULL');
     if (q.sent === '0') w.push('p.off_china_date IS NULL');
-    if (q.code) { w.push('p.packing_code LIKE ?'); p.push(`%${q.code}%`); }
+    if (q.code) { w.push('(p.packing_code LIKE ? OR p.reference_id LIKE ?)'); p.push(`%${q.code}%`, `%${q.code}%`); }
     if (q.tracking) { w.push('(p.tracking_no LIKE ? OR EXISTS (SELECT 1 FROM packing_items i WHERE i.packing_id = p.id AND i.tracking_no LIKE ?))'); p.push(`%${q.tracking}%`, `%${q.tracking}%`); }
     if (q.order_id) { w.push('EXISTS (SELECT 1 FROM packing_items i JOIN order_items oi ON oi.id = i.order_item_id JOIN orders o ON o.id = oi.order_id WHERE i.packing_id = p.id AND (CAST(oi.order_id AS TEXT) = ? OR o.order_no LIKE ?))'); p.push(q.order_id, `%${q.order_id}%`); }
     if (q.ref) { // one search box: box code, tracking (box or item) or order no.
-      w.push(`(p.packing_code LIKE ? OR p.tracking_no LIKE ? OR EXISTS (SELECT 1 FROM packing_items i LEFT JOIN order_items oi ON oi.id = i.order_item_id LEFT JOIN orders o ON o.id = oi.order_id
+      w.push(`(p.packing_code LIKE ? OR p.reference_id LIKE ? OR p.tracking_no LIKE ? OR EXISTS (SELECT 1 FROM packing_items i LEFT JOIN order_items oi ON oi.id = i.order_item_id LEFT JOIN orders o ON o.id = oi.order_id
         WHERE i.packing_id = p.id AND (i.tracking_no LIKE ? OR o.order_no LIKE ? OR CAST(oi.order_id AS TEXT) = ?)))`);
-      const like = `%${String(q.ref).trim()}%`; p.push(like, like, like, like, String(q.ref).trim().replace(/^#/, ''));
+      const like = `%${String(q.ref).trim()}%`; p.push(like, like, like, like, like, String(q.ref).trim().replace(/^#/, ''));
     }
     if (q.transport) { if (q.transport === 'none') w.push('p.transport IS NULL'); else { w.push('p.transport = ?'); p.push(q.transport); } }
     if (q.unmeasured === '1') w.push('(COALESCE(p.weight,0) = 0 OR COALESCE(p.cubic1,0) * COALESCE(p.cubic2,0) * COALESCE(p.cubic3,0) = 0)');
@@ -261,7 +261,7 @@ export function logisticsRouter() {
     if (!s) throw new HttpError(404, 'Shipment not found');
     const code = String(req.body.code || '').trim();
     // accepts the box code (PK…), a tracking no., or the CTN number of a box already on this round
-    let p = get<any>('SELECT * FROM packings WHERE packing_code = ? COLLATE NOCASE', [code]);
+    let p = get<any>('SELECT * FROM packings WHERE packing_code = ? COLLATE NOCASE OR reference_id = ?', [code, code]);
     if (!p) {
       const byTracking = all<any>(`SELECT * FROM packings p WHERE p.tracking_no = ? OR EXISTS
         (SELECT 1 FROM packing_items i WHERE i.packing_id = p.id AND i.tracking_no = ?)`, [code, code]);

@@ -4,8 +4,8 @@ import { api, useApi, useApp, useCan, useLang, useT, pick, cbm, money } from '..
 import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, StylePick, Badge, Modal, PrintModal, Barcode, Tabs, useAction, useAsk, useToast, Bi } from '../ui';
 import { Printer, ReceiptText, Plus, X, PackagePlus, PackageOpen, FileSpreadsheet } from 'lucide-react';
 
-// One reference per box for lists: order no. first, then tracking, then the box code.
-const boxRef = (r: { order_nos?: string | null; tracking_no?: string | null; packing_code?: string }) => r.order_nos || r.tracking_no || r.packing_code || '';
+// One reference per box for lists: order no. first, then tracking, then the reference id (yyyymmnnnn).
+const boxRef = (r: { order_nos?: string | null; tracking_no?: string | null; reference_id?: string | null }) => r.order_nos || r.tracking_no || r.reference_id || '';
 // How the box travels to Thailand (packings.transport)
 function TransportPick({ value, onChange, all }: { value: string | null | undefined; onChange: (v: string) => void; all?: boolean }) {
   const t = useT();
@@ -44,6 +44,7 @@ export function LabelDoc({ packings }: { packings: any[] }) {
             {[...(p.items || []).map((i: any) => `${orderLabel(i)} ${i.product_id || ''} ×${i.quantity}`),
               ...(p.styles || []).map((s: any) => `${pick({ th: s.style_th, zh: s.style_zh, en: s.style_en }, lang)} ×${s.quantity}`)].join(' · ')}
           </div>
+          {p.reference_id && <div style={{ fontSize: 12 }}>Ref: {p.reference_id}</div>}
           {p.tracking_no && <div style={{ fontSize: 12 }}>Track: {p.tracking_no}</div>}
           {p.remark && <div style={{ fontSize: 12 }}>{p.remark}</div>}
         </div>
@@ -278,7 +279,7 @@ export function PackWeigh() {
         <Grid cols={4}>
           <Field label={t('Customer code', 'รหัสลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => setQ({ ...q, customer_id: v })} /></Field>
           <Field label={t('Shipment round', 'รอบขนส่ง', '发货单')}><ShipmentPick value={q.shipment_id} onChange={(v) => setQ({ ...q, shipment_id: v })} placeholder={t('All rounds', '--ทุกรอบขนส่ง--', '所有的发货单')} /></Field>
-          <Field label={t('Order / tracking / box no.', 'เลขออเดอร์ / แทรค / เลขกล่อง', '订单号 / 单号 / 包号')}><input value={q.ref || ''} onChange={(e) => setQ({ ...q, ref: e.target.value })} /></Field>
+          <Field label={t('Order / tracking / box no. / ref', 'เลขออเดอร์ / แทรค / เลขกล่อง / ref', '订单号 / 单号 / 包号 / 参考号')}><input value={q.ref || ''} onChange={(e) => setQ({ ...q, ref: e.target.value })} /></Field>
           <Field label={t('Show', 'แสดง', '显示')}>
             <select value={q.unmeasured} onChange={(e) => setQ({ ...q, unmeasured: e.target.value })}>
               <option value="1">{t('Missing weight or size', 'เฉพาะที่ยังไม่ชั่ง/วัด', '未称重')}</option><option value="">{t('All boxes', 'ทั้งหมด', '全部')}</option>
@@ -297,7 +298,8 @@ export function PackWeigh() {
       </Card>
       <Table rows={rows} selectable={() => true} selected={sel} onSelect={setSel} rowClass={(r) => (edits[r.id] ? 'on' : '')} columns={[
         { key: 'shipment_code', label: t('Round (shipment code)', 'รอบขนส่ง (shipment code)', '发货单'), render: (r) => r.shipment_code || <span className="muted">—</span> },
-        { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 包号'), render: (r) => <b className="clip">{boxRef(r)}</b> },
+        { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <b>{r.packing_code}</b> },
+        { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 参考号'), render: (r) => <span className="clip">{boxRef(r)}</span> },
         { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
         { key: 'weight', label: 'kg', render: cell('weight') },
         { key: 'cubic1', label: t('W cm', 'กว้าง', '宽'), render: cell('cubic1') },
@@ -385,7 +387,7 @@ export function PackingList() {
         <Grid cols={4}>
           <Field label={t('Customer code', 'รหัสลูกค้า', '客户')}><CustomerPick value={q.customer_id} onChange={(v) => set('customer_id', v)} /></Field>
           <Field label={t('Shipment round', 'รอบขนส่ง', '发货单')}><ShipmentPick value={q.shipment_id} onChange={(v) => set('shipment_id', v)} placeholder={t('All rounds', '--ทุกรอบขนส่ง--', '所有的发货单')} /></Field>
-          <Field label={t('Order / tracking / box no.', 'เลขออเดอร์ / แทรค / เลขกล่อง', '订单号 / 单号 / 包号')}><input value={q.ref || ''} onChange={(e) => set('ref', e.target.value)} /></Field>
+          <Field label={t('Order / tracking / box no. / ref', 'เลขออเดอร์ / แทรค / เลขกล่อง / ref', '订单号 / 单号 / 包号 / 参考号')}><input value={q.ref || ''} onChange={(e) => set('ref', e.target.value)} /></Field>
           <Field label={t('Transport', 'ส่งทาง รถ / เรือ', '运输方式')}><TransportPick all value={q.transport} onChange={(v) => set('transport', v)} /></Field>
           <Field label={t('Status', 'สถานะ', '状态')}>
             <select value={q.sent} onChange={(e) => set('sent', e.target.value)}>
@@ -408,7 +410,8 @@ export function PackingList() {
       </div>
       <Table rows={data} onRow={canEdit ? (r) => setEdit(r.id) : undefined} selectable={() => true} selected={sel} onSelect={setSel} columns={[
         { key: 'shipment_code', label: t('Round (shipment code)', 'รอบขนส่ง (shipment code)', '发货单'), render: (r) => r.shipment_code || <span className="muted">—</span> },
-        { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 包号'), render: (r) => <b className="clip">{boxRef(r)}</b> },
+        { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <b>{r.packing_code}</b> },
+        { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 参考号'), render: (r) => <span className="clip">{boxRef(r)}</span> },
         { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
         { key: 'transport', label: t('Transport', 'รถ/เรือ', '运输'), render: (r) => transportText(r.transport) },
         { key: 'ctn', label: 'CTN', render: (r) => r.ctn ? `${r.ctn}/${r.no ?? ''}` : '' },
