@@ -17,7 +17,7 @@ function SupplierBankPick({ value, onChange }: { value: any; onChange: (v: any) 
           getLabel={(b) => `${b.bank} · ${b.account_name || ''} · ${b.account_number || ''}`} />
       </div>
       {value && <button type="button" onClick={() => setAdd({ ...lookups.supplierBanks.find((b) => b.id === Number(value)) })}><Pencil size={16} aria-hidden /><span className="sr-only">{t('Edit supplier bank', 'แก้ไขบัญชีร้านค้า', '修改卖家银行')}</span></button>}
-      <button type="button" onClick={() => setAdd({ bank: 'ICBC 工行' })}>+</button>
+      <button type="button" onClick={() => setAdd({ bank: '' })}><Plus size={16} aria-hidden /><span className="sr-only">{t('Add supplier bank', 'เพิ่มบัญชีร้านค้า', '新增卖家银行')}</span></button>
       {add && (
         <Modal open title={add.id ? t('Edit supplier bank', 'แก้ไขบัญชีร้านค้า', '修改卖家银行') : t('Add supplier bank', 'เพิ่มบัญชีร้านค้า', '新增卖家银行')} onClose={() => setAdd(null)}
           footer={<button className="primary" onClick={async () => {
@@ -26,9 +26,11 @@ function SupplierBankPick({ value, onChange }: { value: any; onChange: (v: any) 
           }}>{t('Save', 'บันทึก', '保存')}</button>}>
           <Grid cols={2}>
             <Field label={t('Bank', 'ธนาคาร', '银行')}>
-              <select value={add.bank} onChange={(e) => setAdd({ ...add, bank: e.target.value })}>
-                {[...new Set([add.bank, 'ICBC 工行', 'ABC 农行', 'CCB 建行', 'BOC 中行', 'Alipay 支付宝', 'WeChat 微信', 'Other 其他'])].map((b) => <option key={b}>{b}</option>)}
-              </select>
+              <input list="supplier-bank-names" value={add.bank || ''} onChange={(e) => setAdd({ ...add, bank: e.target.value })} />
+              {/* suggestions: common banks + every bank name already used; any other name can be typed */}
+              <datalist id="supplier-bank-names">
+                {[...new Set(['ICBC 工行', 'ABC 农行', 'CCB 建行', 'BOC 中行', 'Alipay 支付宝', 'WeChat 微信', ...lookups.supplierBanks.map((b) => b.bank)].filter(Boolean))].map((b) => <option key={b} value={b} />)}
+              </datalist>
             </Field>
             <Field label={t('Branch', 'สาขาธนาคาร', '支行')}><input value={add.branch || ''} onChange={(e) => setAdd({ ...add, branch: e.target.value })} /></Field>
             <Field label={t('Account name', 'ชื่อบัญชี', '帐户名')}><input value={add.account_name || ''} onChange={(e) => setAdd({ ...add, account_name: e.target.value })} /></Field>
