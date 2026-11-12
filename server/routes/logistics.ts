@@ -8,6 +8,9 @@ import {
   notifyStatus, type Currency,
 } from '../logic.js';
 
+/** Billing counts parcels, never the sack that holds them (no double count of boxes / kg / charges). */
+const notSack = (a: string) => `NOT EXISTS (SELECT 1 FROM packings sk WHERE sk.parent_id = ${a}.id)`;
+
 const TRANSPORTS = ['truck', 'ship'];
 const transportOf = (v: any) => {
   if (v == null || v === '') return null;
@@ -428,7 +431,7 @@ export function logisticsRouter() {
     const sid = Number(req.params.id);
     const currency = (req.query.currency === 'CNY' ? 'CNY' : 'THB') as Currency;
     const customers = all<any>(`SELECT c.id, c.code, c.firstname, c.nickname, COUNT(p.id) AS boxes, ROUND(SUM(p.weight),2) AS weight
-      FROM packings p JOIN customers c ON c.id = p.customer_id WHERE p.shipment_id = ? GROUP BY c.id ORDER BY c.code`, [sid]);
+      FROM packings p JOIN customers c ON c.id = p.customer_id WHERE p.shipment_id = ? AND ${notSack('p')} GROUP BY c.id ORDER BY c.code`, [sid]);
     res.json(customers.map((c) => {
       const summary = get<any>('SELECT * FROM shipment_summaries WHERE shipment_id = ? AND customer_id = ?', [sid, c.id]);
       const ch = shipmentCustomerCharges(sid, c.id, (summary?.currency || currency) as Currency);
@@ -492,12 +495,12 @@ export function logisticsRouter() {
     if (req.query.to) { w.push('s.date <= ?'); p.push(req.query.to); }
     if (req.query.paid === '0' || req.query.paid === '1') { w.push('ss.paid = ?'); p.push(Number(req.query.paid)); }
     const summarized = all<any>(`SELECT ss.*, s.code AS shipment_code, s.date AS shipment_date, c.code AS customer_code,
-        (SELECT COUNT(*) FROM packings x WHERE x.shipment_id = ss.shipment_id AND x.customer_id = ss.customer_id) AS boxes
+        (SELECT COUNT(*) FROM packings x WHERE x.shipment_id = ss.shipment_id AND x.customer_id = ss.customer_id AND ${notSack('x')}) AS boxes
       FROM shipment_summaries ss JOIN shipments s ON s.id = ss.shipment_id JOIN customers c ON c.id = ss.customer_id
       WHERE ${w.join(' AND ')} ORDER BY s.date DESC, c.code`, p);
     let pending: any[] = [];
     if (req.query.summarized !== '1') {
-      const w2 = ['p.shipment_id IS NOT NULL', 'NOT EXISTS (SELECT 1 FROM shipment_summaries ss WHERE ss.shipment_id = p.shipment_id AND ss.customer_id = p.customer_id)'];
+      const w2 = ['p.shipment_id IS NOT NULL', notSack('p'), 'NOT EXISTS (SELECT 1 FROM shipment_summaries ss WHERE ss.shipment_id = p.shipment_id AND ss.customer_id = p.customer_id)'];
       const p2: any[] = [];
       if (req.query.customer_id) { w2.push('p.customer_id = ?'); p2.push(req.query.customer_id); }
       if (req.query.from) { w2.push('s.date >= ?'); p2.push(req.query.from); }
