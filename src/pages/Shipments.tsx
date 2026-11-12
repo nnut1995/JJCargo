@@ -201,7 +201,18 @@ function LoadModal({ round, onClose }: { round: number | null; onClose: () => vo
   );
 }
 
-export function ShippingBill({ d }: { d: any }) {
+/** Print toggle: hide the price columns (basis / rate / price) on the shipping bill. Remembered per browser. */
+function useHidePrice() {
+  const [hide, setHide] = useState(() => { try { return localStorage.getItem('bill_hide_price') === '1'; } catch { return false; } });
+  const set = (v: boolean) => { setHide(v); try { localStorage.setItem('bill_hide_price', v ? '1' : '0'); } catch { /* ignore */ } };
+  return [hide, set] as const;
+}
+function HidePriceToggle({ hide, onChange }: { hide: boolean; onChange: (v: boolean) => void }) {
+  const t = useT();
+  return <label className="row no-print" style={{ marginBottom: 12 }}><input type="checkbox" checked={hide} onChange={(e) => onChange(e.target.checked)} /> {t('Hide prices (basis, rate, price)', 'ซ่อนราคา (คิดตาม เรท ราคา)', '隐藏价格 (计算、单价、价格)')}</label>;
+}
+
+export function ShippingBill({ d, hidePrice = false }: { d: any; hidePrice?: boolean }) {
   const t = useT();
   const { lookups } = useApp();
   const addr = d.addresses?.[0];
@@ -214,10 +225,10 @@ export function ShippingBill({ d }: { d: any }) {
         <div style={{ textAlign: 'right' }}><b>{d.customer?.code}</b> {d.customer?.firstname} {d.customer?.lastname}<br />{d.customer?.phone}<br />{addr ? `${addr.address} ${addr.province || ''} ${addr.postcode || ''}` : ''}</div>
       </div>
       <table>
-        <thead><tr><th>CTN</th><th>{t('Box', 'เลขกระสอบ', '包号')}</th><th>kg</th><th>cm</th><th>m³</th><th>{t('Basis', 'คิดตาม', '计算')}</th><th>{t('Rate', 'เรท', '单价')}</th><th>{t('Price', 'ราคา', '价格')}</th></tr></thead>
+        <thead><tr><th>CTN</th><th>{t('Box', 'เลขกระสอบ', '包号')}</th><th>kg</th><th>cm</th><th>m³</th>{!hidePrice && <><th>{t('Basis', 'คิดตาม', '计算')}</th><th>{t('Rate', 'เรท', '单价')}</th><th>{t('Price', 'ราคา', '价格')}</th></>}</tr></thead>
         <tbody>
-          {d.packings.map((p: any) => <tr key={p.id}><td>{p.ctn}/{p.no}</td><td>{p.packing_code}</td><td>{p.weight}</td><td>{p.cubic1}×{p.cubic2}×{p.cubic3}</td><td>{p.cbm.toFixed(4)}</td><td>{p.basis}</td><td>{money(p.rate)}</td><td>{money(p.price)}</td></tr>)}
-          {d.others.map((o: any) => <tr key={`o${o.id}`}><td colSpan={7}>{o.detail}</td><td>{money(o.amount)}</td></tr>)}
+          {d.packings.map((p: any) => <tr key={p.id}><td>{p.ctn}/{p.no}</td><td>{p.packing_code}</td><td>{p.weight}</td><td>{p.cubic1}×{p.cubic2}×{p.cubic3}</td><td>{p.cbm.toFixed(4)}</td>{!hidePrice && <><td>{p.basis}</td><td>{money(p.rate)}</td><td>{money(p.price)}</td></>}</tr>)}
+          {d.others.map((o: any) => <tr key={`o${o.id}`}><td colSpan={hidePrice ? 4 : 7}>{o.detail}</td><td>{money(o.amount)}</td></tr>)}
         </tbody>
       </table>
       <div className="total-line"><span>{t('Shipping', 'ค่าขนส่ง', '运费')} {cur}{money(d.shipping)}</span><span>{t('Other', 'อื่นๆ', '其他')} {cur}{money(d.other)}</span><span>{t('Total', 'รวม', '总价')} {cur}{money(d.total)}</span></div>
@@ -241,6 +252,7 @@ export function ShipmentSummary() {
   useEffect(() => { setBoxSel(new Set()); }, [sid, cid]);
   const [other, setOther] = useState({ detail: '', amount: '' });
   const [print, setPrint] = useState(false);
+  const [hidePrice, setHidePrice] = useHidePrice();
   const { run } = useAction();
   const { ask } = useAsk();
   const reloadAll = () => { list.reload(); detail.reload(); };
@@ -357,7 +369,7 @@ export function ShipmentSummary() {
             : t('Prices are recalculated right away.', 'ราคาจะคำนวณใหม่ทันที', '价格立即重新计算')}</p>
         </Modal>
       )}
-      <PrintModal open={print && !!d} onClose={() => setPrint(false)} title={t('Shipping bill', 'ใบแจ้งค่าขนส่ง', '运费单')}>{d && <ShippingBill d={d} />}</PrintModal>
+      <PrintModal open={print && !!d} onClose={() => setPrint(false)} title={t('Shipping bill', 'ใบแจ้งค่าขนส่ง', '运费单')}>{d && <><HidePriceToggle hide={hidePrice} onChange={setHidePrice} /><ShippingBill d={d} hidePrice={hidePrice} /></>}</PrintModal>
     </Page>
   );
 }
@@ -368,6 +380,7 @@ export function ShippingCharges() {
   const [q, setQ] = useState<any>({ paid: '', summarized: '' });
   const { data } = useApi<any[]>('/shipping-charges', q);
   const [print, setPrint] = useState<any>(null);
+  const [hidePrice, setHidePrice] = useHidePrice();
   return (
     <Page title={t('Search shipping charges', 'ค้นหารายการค่าน้ำหนัก', '查运费')}>
       <Card>
@@ -392,7 +405,7 @@ export function ShippingCharges() {
         { key: 'total', label: t('Total', 'รวม', '总价'), money: true, sum: true }, { key: 'currency', label: '' },
         { key: 'st', label: t('Status', 'สถานะ', '状态'), render: (r) => r.pending ? <Badge>{t('Not posted', 'ยังไม่สรุป', '未汇总')}</Badge> : r.paid ? <Badge tone="good">{t('Paid', 'จ่ายแล้ว', '已付')}</Badge> : <Badge tone="warn">{t('Unpaid', 'ยังไม่จ่าย', '未付')}</Badge> },
       ]} />
-      <PrintModal open={!!print} onClose={() => setPrint(null)} title={t('Shipping bill', 'ใบแจ้งค่าขนส่ง', '运费单')}>{print && <ShippingBill d={print} />}</PrintModal>
+      <PrintModal open={!!print} onClose={() => setPrint(null)} title={t('Shipping bill', 'ใบแจ้งค่าขนส่ง', '运费单')}>{print && <><HidePriceToggle hide={hidePrice} onChange={setHidePrice} /><ShippingBill d={print} hidePrice={hidePrice} /></>}</PrintModal>
     </Page>
   );
 }
