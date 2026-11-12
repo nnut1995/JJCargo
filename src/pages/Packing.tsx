@@ -79,6 +79,17 @@ export function LabelDoc({ packings }: { packings: any[] }) {
   );
 }
 
+// Fixed terms + contacts printed at the bottom of every goods receipt (text from JJ Cargo, 2026-11-12)
+const RECEIPT_TERMS = `หมายเหตุ 备注 :
+1. บริษัทไม่รับขนส่งสินค้าที่ผิดกฎหมาย หากพบสินค้าดังกล่าว ลูกค้าจะต้องได้รับโทษทางกฎหมาย
+如发现有违禁品，采购者和供货商需自己承担法律责任。
+2. ทางบริษัทเพียงช่วยรับสินค้าให้ลูกค้าเท่านั้น ไม่สามารถรับผิดชอบค่าสินค้าให้ลูกค้าได้
+本公司只代客户收货，概不负责货款。
+
+เบอร์ติดต่อ 联系方式
+จีน 中国：13533358790
+ไทย 泰国：0624245141`;
+
 /** ใบรับของ — handed to the person who dropped the goods off. */
 export function ReceiptDoc({ packings }: { packings: any[] }) {
   const t = useT();
@@ -100,7 +111,8 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
         <thead><tr><th>{t('Ref', 'เลข ref', 'ref 号')}</th><th style={{ textAlign: 'right' }}>{t('Boxes', 'จำนวนกล่อง', '包数')}</th></tr></thead>
         <tbody><tr><td style={{ fontSize: 20, fontWeight: 700 }}>{refBase(first) || '—'}</td><td style={{ textAlign: 'right', fontSize: 20, fontWeight: 700 }}>{packings.length} {t('boxes', 'กล่อง', '包')}</td></tr></tbody>
       </table>
-      <div style={{ marginTop: 16 }}><b>{t('Remark', 'หมายเหตุ', '备注')}:</b> {notes.length ? notes.join(' · ') : '________________________________________'}</div>
+      {notes.length > 0 && <div style={{ marginTop: 12 }}>{notes.join(' · ')}</div>}
+      <div style={{ marginTop: 16, whiteSpace: 'pre-line', fontSize: 13 }}>{RECEIPT_TERMS}</div>
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 40 }}>
         <span>{t('Sender', 'ผู้ส่ง', '送货人')} ____________________</span><span>{t('Received by', 'ผู้รับ', '收货人')} ____________________</span>
       </div>
