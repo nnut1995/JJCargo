@@ -42,6 +42,9 @@ function OtherCustomersPick({ value, main, onChange }: { value: number[] | undef
 }
 const useTransportText = () => { const t = useT(); return (v?: string | null) => v === 'truck' ? t('Truck', 'รถ', '陆运') : v === 'ship' ? t('Ship', 'เรือ', '海运') : ''; };
 const orderLabel = (r: { order_no?: string | null; order_id?: number }) => r.order_no || `#${r.order_id}`;
+/** One goods receipt = one running ref number; the -n suffix (boxes saved together) is ignored. */
+const refBase = (p: any) => String(p.reference_id || '').replace(/-\d+$/, '');
+export const mixedRefs = (packings: any[]) => new Set(packings.map(refBase)).size > 1;
 const cbmText = (p: any) => cbm({ cubic1: Number(p.cubic1), cubic2: Number(p.cubic2), cubic3: Number(p.cubic3) }).toFixed(4);
 
 export function LabelDoc({ packings }: { packings: any[] }) {
@@ -83,6 +86,8 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
   const { lookups } = useApp();
   const first = packings[0] || {};
   const now = new Date();
+  if (mixedRefs(packings)) return <div className="doc receipt"><p><b>{t('These boxes have different ref numbers: one goods receipt per ref.', 'กล่องที่เลือกมีเลข ref ต่างกัน ออกใบรับของรวมกันไม่ได้ (1 ใบต่อ 1 เลข ref)', '所选包裹的 ref 号不同，不能开同一张收货单')}</b></p>
+    <p>{[...new Set(packings.map(refBase))].map((r) => r || '—').join(', ')}</p></div>;
   return (
     <div className="doc receipt">
       <div className="doc-head">
@@ -453,7 +458,15 @@ export function PackingList() {
   const openDialog = (d: PackDialog | null) => setSp((p) => { const n = new URLSearchParams(p); if (d) n.set('open', d); else { n.delete('open'); n.delete('order'); } return n; }, { replace: !d });
   const closeDialog = () => openDialog(null);
   const canNew = can.menu('packing.new'), canNobill = can.menu('packing.nobill'), canFile = can.menu('packing.bulk'), canEdit = can.menu('packing.search');
-  const printSel = async (start: 'labels' | 'receipt') => setPrint({ packings: await Promise.all([...sel].map((id) => api(`/packing/${id}`))), start });
+  const toast = useToast();
+  const printSel = async (start: 'labels' | 'receipt') => {
+    const packings = await Promise.all([...sel].map((id) => api(`/packing/${id}`)));
+    if (start === 'receipt' && mixedRefs(packings)) {
+      toast(t('Selected boxes have different ref numbers: one goods receipt per ref.', 'กล่องที่เลือกมีเลข ref ต่างกัน ออกใบรับของรวมกันไม่ได้', '所选包裹的 ref 号不同，不能开同一张收货单'), 'err');
+      return;
+    }
+    setPrint({ packings, start });
+  };
   const set = (k: string, v: any) => { setQ({ ...q, [k]: v }); setSel(new Set()); };
   const boxesView = <>
       <div className="row" style={{ margin: '0 0 10px', alignItems: 'center' }}>
