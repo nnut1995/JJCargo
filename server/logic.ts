@@ -88,7 +88,8 @@ export function packingPrice(p: any, rates: Rates, currency: Currency) {
 export function shipmentCustomerCharges(shipmentId: number, customerId: number, currency: Currency) {
   const rates = customerRates(customerId);
   const packings = all<any>(
-    'SELECT * FROM packings WHERE shipment_id = ? AND customer_id = ? ORDER BY ctn, no, id', [shipmentId, customerId],
+    // a sack (กระสอบรวม) is only the container for its parcels; the parcels are what gets charged
+    'SELECT * FROM packings p WHERE shipment_id = ? AND customer_id = ? AND NOT EXISTS (SELECT 1 FROM packings ch WHERE ch.parent_id = p.id) ORDER BY ctn, no, id', [shipmentId, customerId],
   ).map((p) => ({ ...p, ...packingPrice(p, rates, currency) }));
   const others = all<any>('SELECT * FROM shipment_other_amounts WHERE shipment_id = ? AND customer_id = ? ORDER BY id', [shipmentId, customerId]);
   const shipping = round2(packings.reduce((s, p) => s + p.price, 0));
@@ -103,13 +104,16 @@ export function nextPackingCode(): string {
   while (get('SELECT 1 FROM packings WHERE packing_code = ?', [`PK${String(n).padStart(4, '0')}`])) n++;
   return `PK${String(n).padStart(4, '0')}`;
 }
-/** Box reference id: yyyymm + 4-digit running number that restarts each month, e.g. 2026110001 (separate from the PK box code). */
+/** Box reference id: yyyymm + 4-digit running number that restarts each month, e.g. 2026110001 (separate from the PK box code).
+ *  Boxes saved together (one receipt, "boxes: N") share one number with a -1..-N suffix, e.g. 2026110012-1, 2026110012-2. */
 export function nextReferenceId(): string {
   const d = new Date(); // server local time, so the month flips at local midnight
   const prefix = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
-  const last = get<{ code: string }>("SELECT reference_id AS code FROM packings WHERE reference_id GLOB ? ORDER BY LENGTH(reference_id) DESC, reference_id DESC LIMIT 1", [`${prefix}[0-9][0-9][0-9][0-9]*`]);
-  let n = last ? Number(last.code.slice(prefix.length)) + 1 : 1;
-  while (get('SELECT 1 FROM packings WHERE reference_id = ?', [`${prefix}${String(n).padStart(4, '0')}`])) n++;
+  const last = get<{ n: number | null }>(`SELECT MAX(CAST(CASE WHEN instr(reference_id, '-') > 0 THEN substr(reference_id, ${prefix.length + 1}, instr(reference_id, '-') - ${prefix.length + 1})
+      ELSE substr(reference_id, ${prefix.length + 1}) END AS INTEGER)) AS n FROM packings WHERE reference_id GLOB ?`, [`${prefix}[0-9][0-9][0-9][0-9]*`])?.n;
+  let n = (last || 0) + 1;
+  const taken = (code: string) => get('SELECT 1 FROM packings WHERE reference_id = ? OR reference_id LIKE ?', [code, `${code}-%`]);
+  while (taken(`${prefix}${String(n).padStart(4, '0')}`)) n++;
   return `${prefix}${String(n).padStart(4, '0')}`;
 }
 export function nextPackageCode(): string {
