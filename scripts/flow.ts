@@ -110,6 +110,22 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { transport: 'ship' } });
   assert.ok((await call('/packing?transport=ship')).some((x: any) => x.id === pkOrd.created[0].id));
   await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { transport: 'plane' }, expect: 400 });
+  // รวมกล่อง: small parcels of one customer become one box (oldest keeps its code), weight cleared for re-weighing
+  const small = await Promise.all(['SF1', 'SF2', 'SF1'].map((tr, i) => call('/packing', { body: { customer_id: b.id, tracking_no: tr, weight: 0.5,
+    cubic1: 10, cubic2: 10, cubic3: 10, remark: i === 0 ? 'fragile' : '', styles: [{ style_id: clothes.id, quantity: 2 }] } })));
+  const smallIds = small.map((x: any) => x.created[0].id);
+  await call('/packing/merge', { body: { ids: [smallIds[0]] }, expect: 400 });
+  await call('/packing/merge', { body: { ids: [smallIds[0], pk1.created[0].id] }, expect: 409 }); // another customer
+  const merged = await call('/packing/merge', { body: { ids: smallIds } });
+  assert.equal(merged.id, smallIds[0]);
+  assert.equal(merged.weight, 0);
+  assert.equal(merged.tracking_no, 'SF1, SF2');
+  assert.equal(merged.styles.length, 1);
+  assert.equal(merged.styles[0].quantity, 6);
+  assert.ok(merged.remark.includes('fragile') && merged.remark.includes(small[1].created[0].code));
+  await call(`/packing/${smallIds[1]}`, { expect: 404 });
+  assert.ok((await call(`/packing?unmeasured=1&customer_id=${b.id}`)).some((x: any) => x.id === merged.id));
+  await call(`/packing/${merged.id}`, { method: 'DELETE' });
   // secondary customers: box shows up under them too, shipping stays with the main customer
   await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { other_customer_ids: [a.id, b.id] } });
   const withOther = await call(`/packing/${pkOrd.created[0].id}`);

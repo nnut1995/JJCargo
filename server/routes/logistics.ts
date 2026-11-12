@@ -165,6 +165,52 @@ export function logisticsRouter() {
     audit(req.user.username, 'measure', 'packings', undefined, { ids: saved });
     res.json({ ok: true, saved: saved.length });
   });
+  // "รวมกล่อง": several small parcels of one customer become one box (the oldest keeps its code).
+  // Contents, categories, secondary customers and tracking numbers move over; the other boxes are deleted.
+  // Weight / size are cleared so the combined box shows up again on the weigh screen.
+  r.post('/packing/merge', needMenu('packing.weigh', 'packing.search'), (req, res) => {
+    const ids = [...new Set(((req.body.ids || []) as any[]).map(Number).filter((x) => x > 0))];
+    if (ids.length < 2) throw new HttpError(400, 'เลือกอย่างน้อย 2 กล่อง / 至少选两个包');
+    const result = tx(() => {
+      const boxes = all<any>(`SELECT * FROM packings WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY id`, ids);
+      if (boxes.length !== ids.length) throw new HttpError(404, 'Box not found');
+      if (new Set(boxes.map((b) => b.customer_id)).size > 1) throw new HttpError(409, 'คนละรหัสลูกค้ารวมกล่องไม่ได้ / 不同的客户不能合并');
+      for (const b of boxes) {
+        if (b.off_china_date) throw new HttpError(409, `${b.packing_code}: ขึ้นตู้แล้ว รวมไม่ได้ / 已装柜`);
+        if (b.shipment_id && get('SELECT 1 FROM shipment_summaries WHERE shipment_id = ? AND customer_id = ?', [b.shipment_id, b.customer_id])) {
+          throw new HttpError(409, `${b.packing_code}: สรุปยอดแล้ว — undo the shipping summary first`);
+        }
+      }
+      const rounds = [...new Set(boxes.map((b) => b.shipment_id).filter(Boolean))];
+      if (rounds.length > 1) throw new HttpError(409, 'กล่องอยู่คนละรอบขนส่ง / 不同的发货单');
+      const [target, ...rest] = boxes;
+      const restIds = rest.map((b) => b.id);
+      const inRest = restIds.map(() => '?').join(',');
+      // contents: same order line / category in several boxes becomes one line
+      for (const it of all<any>(`SELECT * FROM packing_items WHERE packing_id IN (${inRest}) ORDER BY id`, restIds)) {
+        const same = get<any>('SELECT id FROM packing_items WHERE packing_id = ? AND order_item_id = ?', [target.id, it.order_item_id]);
+        if (same) run('UPDATE packing_items SET quantity = quantity + ? WHERE id = ?', [it.quantity, same.id]);
+        else run('UPDATE packing_items SET packing_id = ? WHERE id = ?', [target.id, it.id]);
+      }
+      for (const st of all<any>(`SELECT * FROM packing_styles WHERE packing_id IN (${inRest}) ORDER BY id`, restIds)) {
+        const same = get<any>('SELECT id FROM packing_styles WHERE packing_id = ? AND style_id = ?', [target.id, st.style_id]);
+        if (same) run('UPDATE packing_styles SET quantity = quantity + ? WHERE id = ?', [st.quantity, same.id]);
+        else run('UPDATE packing_styles SET packing_id = ? WHERE id = ?', [target.id, st.id]);
+      }
+      run(`INSERT OR IGNORE INTO packing_customers (packing_id, customer_id)
+        SELECT ?, customer_id FROM packing_customers WHERE packing_id IN (${inRest})`, [target.id, ...restIds]);
+      const uniq = (xs: any[]) => [...new Set(xs.flatMap((x) => String(x || '').split(',')).map((x) => x.trim()).filter(Boolean))];
+      const tracking = uniq(boxes.map((b) => b.tracking_no)).join(', ') || null;
+      const remark = [...uniq(boxes.map((b) => b.remark)), `รวมจาก ${rest.map((b) => b.packing_code).join(', ')}`].join(' · ');
+      run(`UPDATE packings SET weight = 0, cubic1 = 0, cubic2 = 0, cubic3 = 0, tracking_no = ?, remark = ?, shipment_id = ?,
+        transport = COALESCE(transport, ?), updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [tracking, remark, rounds[0] || null, boxes.find((b) => b.transport)?.transport || null, req.user.username, target.id]);
+      run(`DELETE FROM packings WHERE id IN (${inRest})`, restIds);
+      audit(req.user.username, 'merge', 'packings', target.id, { from: rest.map((b) => ({ id: b.id, code: b.packing_code, weight: b.weight })) });
+      return target.id;
+    });
+    res.json(packingDetail(result));
+  });
   r.put('/packing/:id', needMenu('packing.search', 'packing.new', 'shipment.summary', 'packing.weigh'), (req, res) => {
     const p = get<any>('SELECT * FROM packings WHERE id = ?', [req.params.id]);
     if (!p) throw new HttpError(404, 'Not found');

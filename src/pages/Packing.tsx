@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, pick, cbm, money } from '../lib';
 import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, StylePick, Badge, Modal, PrintModal, Barcode, Tabs, useAction, useAsk, useToast, Bi } from '../ui';
-import { Printer, ReceiptText, Plus, X, PackagePlus, PackageOpen, FileSpreadsheet, ArrowLeft } from 'lucide-react';
+import { Printer, ReceiptText, Plus, X, PackagePlus, PackageOpen, FileSpreadsheet, ArrowLeft, Combine } from 'lucide-react';
 
 // One reference per box for lists: order no. first, then tracking, then the reference id (yyyymmnnnn).
 const boxRef = (r: { order_nos?: string | null; tracking_no?: string | null; reference_id?: string | null }) => r.order_nos || r.tracking_no || r.reference_id || '';
@@ -289,10 +289,29 @@ export function PackWeigh() {
   };
   const cell = (k: string) => (r: any) => <input data-m type="number" step="any" min={0} style={{ width: 90 }} value={r[k] || ''} onKeyDown={onKey} onChange={(e) => set(r.id, k, e.target.value)} />;
   const printSel = async () => setPrint(await Promise.all([...sel].map((id) => api(`/packing/${id}`))));
+  const { ask } = useAsk();
+  // รวมกล่อง: small parcels of one customer -> one box (oldest keeps its code), then weigh it once
+  const picked = rows.filter((r) => sel.has(r.id));
+  const oneCustomer = picked.length > 1 && new Set(picked.map((r) => r.customer_id)).size === 1;
+  const merge = async () => {
+    const keep = [...picked].sort((a, b) => a.id - b.id)[0];
+    const others = picked.filter((r) => r !== keep).map((r) => r.packing_code).join(', ');
+    if (!await ask(t(`Combine ${picked.length} boxes into ${keep.packing_code}? ${others} will be deleted and the combined box must be weighed again.`,
+      `รวม ${picked.length} กล่องเป็น ${keep.packing_code}? กล่อง ${others} จะถูกลบ และต้องชั่ง/วัดกล่องที่รวมใหม่`,
+      `把 ${picked.length} 个包合并成 ${keep.packing_code}？${others} 会被删除，合并后需要重新称重`))) return;
+    const p: any = await run(() => api('/packing/merge', { body: { ids: picked.map((r) => r.id) } }), t('Combined', 'รวมกล่องแล้ว', '已合并'));
+    if (!p) return;
+    setEdits((e) => { const n = { ...e }; picked.forEach((r) => delete n[r.id]); return n; });
+    setSel(new Set()); reload();
+    setPrint([p]); // new label for the combined box
+  };
   return (
     <Page title={t('Weigh boxes later', 'ชั่งน้ำหนัก / วัดขนาดทีหลัง', '补录重量尺寸')}
       actions={<>
         <button disabled={!sel.size} onClick={printSel}><Printer size={16} aria-hidden /> {t('Print labels', 'ปริ้นป้าย', '打印')} ({sel.size})</button>
+        <button disabled={!oneCustomer || busy} onClick={merge}
+          title={sel.size > 1 && !oneCustomer ? t('Tick boxes of one customer', 'ติ๊กเฉพาะกล่องของลูกค้าคนเดียวกัน', '只能合并同一个客户的包') : undefined}>
+          <Combine size={16} aria-hidden /> {t('Combine into one box', 'รวมเป็นกล่องเดียว', '合并成一个包')} ({sel.size})</button>
         <button className="primary" disabled={!dirty || busy} onClick={save}>{t('Save', 'บันทึก', '保存')} ({dirty})</button></>}>
       <Card>
         <Grid cols={4}>
@@ -313,7 +332,7 @@ export function PackWeigh() {
           ))}
           <button disabled={!sel.size || !bulkFields.length} onClick={applyBulk}>{t('Apply to ticked', 'ใส่ให้ที่ติ๊ก', '应用到已选')} ({sel.size})</button>
         </div>
-        <p className="muted" style={{ marginBottom: 0 }}>{t('Type the numbers and press Enter to move down, or tick boxes and fill them all at once above. Press Save once at the end.', 'พิมพ์ตัวเลขแล้วกด Enter เพื่อไปช่องถัดไป หรือติ๊กหลายกล่องแล้วใส่ค่าเดียวกันด้านบน เสร็จแล้วกดบันทึกครั้งเดียว', '输入后按 Enter 跳到下一格，或勾选后批量填写，最后保存')}</p>
+        <p className="muted" style={{ marginBottom: 0 }}>{t('Type the numbers and press Enter to move down, or tick boxes and fill them all at once above. Press Save once at the end. Small parcels of one customer: tick them and press "Combine into one box", then weigh the combined box.', 'พิมพ์ตัวเลขแล้วกด Enter เพื่อไปช่องถัดไป หรือติ๊กหลายกล่องแล้วใส่ค่าเดียวกันด้านบน เสร็จแล้วกดบันทึกครั้งเดียว พัสดุชิ้นเล็กของลูกค้าคนเดียวกัน ติ๊กแล้วกด "รวมเป็นกล่องเดียว" แล้วชั่งกล่องที่รวม', '输入后按 Enter 跳到下一格，或勾选后批量填写，最后保存。同一客户的小包可勾选后点“合并成一个包”，再称重')}</p>
       </Card>
       <Table rows={rows} selectable={() => true} selected={sel} onSelect={setSel} rowClass={(r) => (edits[r.id] ? 'on' : '')} columns={[
         { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <b>{r.packing_code}</b> },
