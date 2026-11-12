@@ -82,10 +82,11 @@ export function LabelDoc({ packings }: { packings: any[] }) {
 /** ใบรับของ — handed to the person who dropped the goods off. */
 export function ReceiptDoc({ packings }: { packings: any[] }) {
   const t = useT();
-  const { lang } = useLang();
   const { lookups } = useApp();
   const first = packings[0] || {};
   const now = new Date();
+  // one note for the whole receipt: box remarks without the automatic "(i/n)" counter, each once
+  const notes = [...new Set(packings.map((p) => String(p.remark || '').replace(/\s*\(\d+\/\d+\)$/, '').trim()).filter(Boolean))];
   if (mixedRefs(packings)) return <div className="doc receipt"><p><b>{t('These boxes have different ref numbers: one goods receipt per ref.', 'กล่องที่เลือกมีเลข ref ต่างกัน ออกใบรับของรวมกันไม่ได้ (1 ใบต่อ 1 เลข ref)', '所选包裹的 ref 号不同，不能开同一张收货单')}</b></p>
     <p>{[...new Set(packings.map(refBase))].map((r) => r || '—').join(', ')}</p></div>;
   return (
@@ -96,17 +97,10 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
         <div style={{ textAlign: 'right' }}>{t('Customer', 'รหัสลูกค้า', '客户')}<div className="code" style={{ fontSize: 28, fontWeight: 700 }}>{first.customer_code}</div></div>
       </div>
       <table>
-        <thead><tr><th>#</th><th>{t('Box', 'เลขกล่อง', '包号')}</th><th>{t('Order / track / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 快递单号 / ref')}</th><th>{t('Contents', 'สินค้า', '产品')}</th><th>kg</th><th>{t('Remark', 'หมายเหตุ', '备注')}</th></tr></thead>
-        <tbody>{packings.map((p, i) => (
-          <tr key={p.id}><td>{i + 1}</td><td>{p.packing_code}</td>
-            <td>{[...new Set<string>((p.items || []).map(orderLabel))].map((o) => <div key={o}>{o}</div>)}
-              {p.tracking_no && <div>{p.tracking_no}</div>}
-              {p.reference_id && <div>{p.reference_id}</div>}</td>
-            <td>{[...(p.items || []).map((x: any) => `${x.product_id || pick({ th: x.style_th, zh: x.style_zh, en: x.style_en }, lang) || orderLabel(x)} ×${x.quantity}`), ...(p.styles || []).map((s: any) => `${pick({ th: s.style_th, zh: s.style_zh, en: s.style_en }, lang)} ×${s.quantity}`)].join(', ')}</td>
-            <td>{p.weight || ''}</td><td>{p.remark || ''}</td></tr>
-        ))}</tbody>
+        <thead><tr><th>{t('Ref', 'เลข ref', 'ref 号')}</th><th style={{ textAlign: 'right' }}>{t('Boxes', 'จำนวนกล่อง', '包数')}</th></tr></thead>
+        <tbody><tr><td style={{ fontSize: 20, fontWeight: 700 }}>{refBase(first) || '—'}</td><td style={{ textAlign: 'right', fontSize: 20, fontWeight: 700 }}>{packings.length} {t('boxes', 'กล่อง', '包')}</td></tr></tbody>
       </table>
-      <div className="total-line"><span>{t('Total boxes', 'รวมจำนวน', '总包数')}: <b>{packings.length}</b> {t('boxes', 'กล่อง', '包')}</span></div>
+      <div style={{ marginTop: 16 }}><b>{t('Remark', 'หมายเหตุ', '备注')}:</b> {notes.length ? notes.join(' · ') : '________________________________________'}</div>
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 40 }}>
         <span>{t('Sender', 'ผู้ส่ง', '送货人')} ____________________</span><span>{t('Received by', 'ผู้รับ', '收货人')} ____________________</span>
       </div>
