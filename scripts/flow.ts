@@ -85,6 +85,11 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   assert.ok((await call(`/packing?ref=${ref1}`)).some((x: any) => x.id === pk1.created[0].id));
   const nb = await call('/packing', { body: { customer_id: b.id, weight: 51.12, cubic1: 40, cubic2: 90, cubic3: 90, tracking_no: 'CH83207', boxes: 2, styles: [{ style_id: clothes.id, quantity: 100 }] } });
   assert.equal(nb.created.length, 2);
+  // boxes saved together share one running number with -1, -2 …; the next save continues the count
+  const nbRefs = await Promise.all(nb.created.map(async (c: any) => (await call(`/packing/${c.id}`)).reference_id));
+  const base = Number(ref1.slice(6)) + 1;
+  assert.deepEqual(nbRefs, [1, 2].map((i) => `${ym}${String(base).padStart(4, '0')}-${i}`));
+  assert.equal((await call(`/packing/${nbRefs[1]}`)).id, nb.created[1].id);
 
   log('demo feedback: receive first, weigh later; order numbers; overview per customer');
   await call('/r/banks', { body: { name: 'no currency chosen' }, expect: 400 });

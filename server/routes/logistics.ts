@@ -73,7 +73,7 @@ function insertPacking(b: any, user: string) {
   const code = b.packing_code || nextPackingCode();
   if (get('SELECT 1 FROM packings WHERE packing_code = ?', [code])) throw new HttpError(409, `${code} already exists`);
   const { id } = run(`INSERT INTO packings (packing_code, reference_id, shipment_id, ctn, no, customer_id, weight, cubic1, cubic2, cubic3, remark, tracking_no, transport, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [code, nextReferenceId(), b.shipment_id || null, b.ctn || null, b.no || null, b.customer_id, Number(b.weight || 0),
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [code, b.reference_id || nextReferenceId(), b.shipment_id || null, b.ctn || null, b.no || null, b.customer_id, Number(b.weight || 0),
     Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0), b.remark || null, b.tracking_no || null, transportOf(b.transport), user]);
   setOtherCustomers(id, b.customer_id, b.other_customer_ids);
   for (const it of items) run('INSERT INTO packing_items (packing_id, order_item_id, quantity, tracking_no, created_by) VALUES (?,?,?,?,?)',
@@ -147,8 +147,10 @@ export function logisticsRouter() {
     const boxes = Math.max(1, Math.min(Number(b.boxes || 1), 200));
     const created = tx(() => {
       const out: { id: number; code: string }[] = [];
+      const ref = boxes > 1 ? nextReferenceId() : undefined; // one receipt -> one running number with -1..-N
       for (let i = 0; i < boxes; i++) {
-        out.push(insertPacking({ ...b, packing_code: boxes > 1 ? undefined : b.packing_code, items: i === 0 ? b.items : [], styles: b.styles,
+        out.push(insertPacking({ ...b, packing_code: boxes > 1 ? undefined : b.packing_code, reference_id: ref ? `${ref}-${i + 1}` : undefined,
+          items: i === 0 ? b.items : [], styles: b.styles,
           remark: boxes > 1 ? `${b.remark || ''} (${i + 1}/${boxes})`.trim() : b.remark }, req.user.username));
       }
       return out;

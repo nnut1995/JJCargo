@@ -104,13 +104,16 @@ export function nextPackingCode(): string {
   while (get('SELECT 1 FROM packings WHERE packing_code = ?', [`PK${String(n).padStart(4, '0')}`])) n++;
   return `PK${String(n).padStart(4, '0')}`;
 }
-/** Box reference id: yyyymm + 4-digit running number that restarts each month, e.g. 2026110001 (separate from the PK box code). */
+/** Box reference id: yyyymm + 4-digit running number that restarts each month, e.g. 2026110001 (separate from the PK box code).
+ *  Boxes saved together (one receipt, "boxes: N") share one number with a -1..-N suffix, e.g. 2026110012-1, 2026110012-2. */
 export function nextReferenceId(): string {
   const d = new Date(); // server local time, so the month flips at local midnight
   const prefix = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
-  const last = get<{ code: string }>("SELECT reference_id AS code FROM packings WHERE reference_id GLOB ? ORDER BY LENGTH(reference_id) DESC, reference_id DESC LIMIT 1", [`${prefix}[0-9][0-9][0-9][0-9]*`]);
-  let n = last ? Number(last.code.slice(prefix.length)) + 1 : 1;
-  while (get('SELECT 1 FROM packings WHERE reference_id = ?', [`${prefix}${String(n).padStart(4, '0')}`])) n++;
+  const last = get<{ n: number | null }>(`SELECT MAX(CAST(CASE WHEN instr(reference_id, '-') > 0 THEN substr(reference_id, ${prefix.length + 1}, instr(reference_id, '-') - ${prefix.length + 1})
+      ELSE substr(reference_id, ${prefix.length + 1}) END AS INTEGER)) AS n FROM packings WHERE reference_id GLOB ?`, [`${prefix}[0-9][0-9][0-9][0-9]*`])?.n;
+  let n = (last || 0) + 1;
+  const taken = (code: string) => get('SELECT 1 FROM packings WHERE reference_id = ? OR reference_id LIKE ?', [code, `${code}-%`]);
+  while (taken(`${prefix}${String(n).padStart(4, '0')}`)) n++;
   return `${prefix}${String(n).padStart(4, '0')}`;
 }
 export function nextPackageCode(): string {
