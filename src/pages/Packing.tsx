@@ -347,8 +347,8 @@ export function PackWeigh() {
       </Card>
       <Table rows={rows} selectable={() => true} selected={sel} onSelect={setSel} rowClass={(r) => (edits[r.id] ? 'on' : '')} columns={[
         { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <BoxCode r={r} /> },
-        { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 参考号'), render: (r) => <span className="clip">{boxRef(r)}</span> },
-        { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
+        { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 参考号'), render: (r) => <b className="clip">{boxRef(r)}</b> },
+        { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户'), render: (r) => <b>{r.customer_code}</b> },
         { key: 'weight', label: 'kg', render: cell('weight') },
         { key: 'cubic1', label: t('W cm', 'กว้าง', '宽'), render: cell('cubic1') },
         { key: 'cubic2', label: t('L cm', 'ยาว', '长'), render: cell('cubic2') },
