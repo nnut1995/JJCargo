@@ -94,6 +94,7 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
   const now = new Date();
   // one note for the whole receipt: box remarks without the automatic "(i/n)" counter, each once
   const notes = [...new Set(packings.map((p) => String(p.remark || '').replace(/\s*\(\d+\/\d+\)$/, '').trim()).filter(Boolean))];
+  const transports = [...new Set(packings.map((p) => p.transport).filter((x) => x === 'truck' || x === 'ship'))] as string[];
   if (mixedRefs(packings)) return <div className="doc receipt"><p><b>{t('These boxes have different ref numbers: one goods receipt per ref.', 'กล่องที่เลือกมีเลข ref ต่างกัน ออกใบรับของรวมกันไม่ได้ (1 ใบต่อ 1 เลข ref)', '所选包裹的 ref 号不同，不能开同一张收货单')}</b></p>
     <p>{[...new Set(packings.map(refBase))].map((r) => r || '—').join(', ')}</p></div>;
   return (
@@ -113,6 +114,7 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
         <div><span>รหัสลูกค้า 客户</span><b>{first.customer_code || '—'}</b></div>
         <div><span>เลข ref 单号</span><b>{refBase(first) || '—'}</b></div>
         <div><span>จำนวน 件数</span><b>{packings.length} <small>กล่อง 件</small></b></div>
+        <div><span>ขนส่งทาง 运输方式</span><b>{transports.length ? transports.map((x) => x === 'truck' ? 'รถ 陆运' : 'เรือ 海运').join(' / ') : '—'}</b></div>
       </div>
       {notes.length > 0 && <div className="rcpt-note"><span>{t('Remark', 'หมายเหตุ', '备注')}</span>{notes.join(' · ')}</div>}
       <section className="rcpt-terms">
