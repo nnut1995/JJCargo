@@ -20,7 +20,9 @@ const PACKING_SELECT = `SELECT p.*, c.code AS customer_code, c.firstname, s.code
   (SELECT COUNT(*) FROM packing_styles st WHERE st.packing_id = p.id) AS style_count,
   (SELECT GROUP_CONCAT(DISTINCT COALESCE(o.order_no, '#' || o.id)) FROM packing_items i JOIN order_items oi ON oi.id = i.order_item_id
      JOIN orders o ON o.id = oi.order_id WHERE i.packing_id = p.id) AS order_nos,
-  (SELECT GROUP_CONCAT(c2.code, ', ') FROM packing_customers pc JOIN customers c2 ON c2.id = pc.customer_id WHERE pc.packing_id = p.id) AS other_customers
+  (SELECT GROUP_CONCAT(c2.code, ', ') FROM packing_customers pc JOIN customers c2 ON c2.id = pc.customer_id WHERE pc.packing_id = p.id) AS other_customers,
+  (SELECT pp.packing_code FROM packings pp WHERE pp.id = p.parent_id) AS parent_code,
+  (SELECT COUNT(*) FROM packings ch WHERE ch.parent_id = p.id) AS child_count
   FROM packings p JOIN customers c ON c.id = p.customer_id LEFT JOIN shipments s ON s.id = p.shipment_id`;
 
 /** Replace a box's secondary customers (the main customer is never stored here). */
@@ -41,8 +43,16 @@ function packingDetail(id: number | string) {
     FROM packing_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id LEFT JOIN styles s ON s.id = oi.style_id WHERE pi.packing_id = ?`, [p.id]);
   p.styles = all(`SELECT ps.*, s.th AS style_th, s.zh AS style_zh, s.en AS style_en, u.description AS unit FROM packing_styles ps
     JOIN styles s ON s.id = ps.style_id LEFT JOIN style_units u ON u.id = s.unit_id WHERE ps.packing_id = ?`, [p.id]);
+  p.children = all(`${PACKING_SELECT} WHERE p.parent_id = ? ORDER BY p.id`, [p.id]).map((x: any) => ({ ...x, cbm: cubicMeters(x) }));
   return p;
 }
+
+/** A parcel inside a sack moves with the sack: same round, same loaded date. */
+function syncChildren(parentId: number) {
+  run('UPDATE packings SET shipment_id = (SELECT shipment_id FROM packings WHERE id = ?), off_china_date = (SELECT off_china_date FROM packings WHERE id = ?) WHERE parent_id = ?',
+    [parentId, parentId, parentId]);
+}
+const inSackError = (p: any) => new HttpError(409, `${p.packing_code}: อยู่ในกระสอบ ${get<any>('SELECT packing_code FROM packings WHERE id = ?', [p.parent_id])?.packing_code} ใช้กระสอบแทน / 在合并包里`);
 
 function insertPacking(b: any, user: string) {
   if (!b.customer_id) throw new HttpError(400, 'กรุณาเลือกลูกค้าด้วย / 不要忘记输入顾客');
@@ -108,6 +118,7 @@ export function logisticsRouter() {
       const like = `%${String(q.ref).trim()}%`; p.push(like, like, like, like, like, String(q.ref).trim().replace(/^#/, ''));
     }
     if (q.transport) { if (q.transport === 'none') w.push('p.transport IS NULL'); else { w.push('p.transport = ?'); p.push(q.transport); } }
+    if (q.unmeasured === '1') w.push('p.parent_id IS NULL');
     if (q.unmeasured === '1') w.push('(COALESCE(p.weight,0) = 0 OR COALESCE(p.cubic1,0) * COALESCE(p.cubic2,0) * COALESCE(p.cubic3,0) = 0)');
     if (q.style_id) { w.push('EXISTS (SELECT 1 FROM packing_styles st WHERE st.packing_id = p.id AND st.style_id = ?)'); p.push(q.style_id); }
     return { where: w.join(' AND '), params: p };
@@ -165,56 +176,71 @@ export function logisticsRouter() {
     audit(req.user.username, 'measure', 'packings', undefined, { ids: saved });
     res.json({ ok: true, saved: saved.length });
   });
-  // "รวมกล่อง": several small parcels of one customer become one box (the oldest keeps its code).
-  // Contents, categories, secondary customers and tracking numbers move over; the other boxes are deleted.
-  // Weight / size are cleared so the combined box shows up again on the weigh screen.
+  // "รวมใส่กระสอบ": small parcels (any customers) go into one sack. The sack is a box of its own (new PK code, label,
+  // weighed, loaded on a round); the parcels keep their codes/customers, follow the sack and are charged after the split.
+  // Ticking an existing sack together with parcels adds them to that sack.
   r.post('/packing/merge', needMenu('packing.weigh', 'packing.search'), (req, res) => {
     const ids = [...new Set(((req.body.ids || []) as any[]).map(Number).filter((x) => x > 0))];
     if (ids.length < 2) throw new HttpError(400, 'เลือกอย่างน้อย 2 กล่อง / 至少选两个包');
-    const result = tx(() => {
-      const boxes = all<any>(`SELECT * FROM packings WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY id`, ids);
+    const sackId = tx(() => {
+      const boxes = all<any>(`SELECT p.*, (SELECT COUNT(*) FROM packings ch WHERE ch.parent_id = p.id) AS child_count
+        FROM packings p WHERE p.id IN (${ids.map(() => '?').join(',')}) ORDER BY p.id`, ids);
       if (boxes.length !== ids.length) throw new HttpError(404, 'Box not found');
-      if (new Set(boxes.map((b) => b.customer_id)).size > 1) throw new HttpError(409, 'คนละรหัสลูกค้ารวมกล่องไม่ได้ / 不同的客户不能合并');
+      const sacks = boxes.filter((b) => b.child_count > 0);
+      if (sacks.length > 1) throw new HttpError(409, 'เลือกได้กระสอบเดียว / 只能选一个合并包');
       for (const b of boxes) {
-        if (b.off_china_date) throw new HttpError(409, `${b.packing_code}: ขึ้นตู้แล้ว รวมไม่ได้ / 已装柜`);
+        if (b.parent_id) throw inSackError(b);
+        if (b.off_china_date) throw new HttpError(409, `${b.packing_code}: ขึ้นตู้แล้ว / 已装柜`);
         if (b.shipment_id && get('SELECT 1 FROM shipment_summaries WHERE shipment_id = ? AND customer_id = ?', [b.shipment_id, b.customer_id])) {
           throw new HttpError(409, `${b.packing_code}: สรุปยอดแล้ว — undo the shipping summary first`);
         }
       }
       const rounds = [...new Set(boxes.map((b) => b.shipment_id).filter(Boolean))];
       if (rounds.length > 1) throw new HttpError(409, 'กล่องอยู่คนละรอบขนส่ง / 不同的发货单');
-      const [target, ...rest] = boxes;
-      const restIds = rest.map((b) => b.id);
-      const inRest = restIds.map(() => '?').join(',');
-      // contents: same order line / category in several boxes becomes one line
-      for (const it of all<any>(`SELECT * FROM packing_items WHERE packing_id IN (${inRest}) ORDER BY id`, restIds)) {
-        const same = get<any>('SELECT id FROM packing_items WHERE packing_id = ? AND order_item_id = ?', [target.id, it.order_item_id]);
-        if (same) run('UPDATE packing_items SET quantity = quantity + ? WHERE id = ?', [it.quantity, same.id]);
-        else run('UPDATE packing_items SET packing_id = ? WHERE id = ?', [target.id, it.id]);
+      const parcels = boxes.filter((b) => b.child_count === 0);
+      let sack = sacks[0];
+      if (!sack) {
+        const { id } = insertPacking({ customer_id: parcels[0].customer_id, shipment_id: rounds[0] || null,
+          transport: parcels.find((b) => b.transport)?.transport || null, remark: 'กระสอบรวม' }, req.user.username);
+        sack = get<any>('SELECT * FROM packings WHERE id = ?', [id]);
       }
-      for (const st of all<any>(`SELECT * FROM packing_styles WHERE packing_id IN (${inRest}) ORDER BY id`, restIds)) {
-        const same = get<any>('SELECT id FROM packing_styles WHERE packing_id = ? AND style_id = ?', [target.id, st.style_id]);
-        if (same) run('UPDATE packing_styles SET quantity = quantity + ? WHERE id = ?', [st.quantity, same.id]);
-        else run('UPDATE packing_styles SET packing_id = ? WHERE id = ?', [target.id, st.id]);
-      }
+      for (const b of parcels) run('UPDATE packings SET parent_id = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [sack.id, req.user.username, b.id]);
+      if (rounds[0]) run('UPDATE packings SET shipment_id = ? WHERE id = ?', [rounds[0], sack.id]);
+      syncChildren(sack.id);
+      // every customer with a parcel inside shows on the sack (main = first parcel's customer)
       run(`INSERT OR IGNORE INTO packing_customers (packing_id, customer_id)
-        SELECT ?, customer_id FROM packing_customers WHERE packing_id IN (${inRest})`, [target.id, ...restIds]);
-      const uniq = (xs: any[]) => [...new Set(xs.flatMap((x) => String(x || '').split(',')).map((x) => x.trim()).filter(Boolean))];
-      const tracking = uniq(boxes.map((b) => b.tracking_no)).join(', ') || null;
-      const remark = [...uniq(boxes.map((b) => b.remark)), `รวมจาก ${rest.map((b) => b.packing_code).join(', ')}`].join(' · ');
-      run(`UPDATE packings SET weight = 0, cubic1 = 0, cubic2 = 0, cubic3 = 0, tracking_no = ?, remark = ?, shipment_id = ?,
-        transport = COALESCE(transport, ?), updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        [tracking, remark, rounds[0] || null, boxes.find((b) => b.transport)?.transport || null, req.user.username, target.id]);
-      run(`DELETE FROM packings WHERE id IN (${inRest})`, restIds);
-      audit(req.user.username, 'merge', 'packings', target.id, { from: rest.map((b) => ({ id: b.id, code: b.packing_code, weight: b.weight })) });
-      return target.id;
+        SELECT DISTINCT ?, customer_id FROM packings WHERE parent_id = ? AND customer_id <> ?`, [sack.id, sack.id, sack.customer_id]);
+      audit(req.user.username, 'sack', 'packings', sack.id, { parcels: parcels.map((b) => b.packing_code) });
+      return sack.id;
     });
-    res.json(packingDetail(result));
+    res.json(packingDetail(sackId));
+  });
+  // "แยกกระสอบ": take parcels out (all when no ids); an empty sack is deleted. Parcels stay on the sack's round.
+  r.post('/packing/:id/split', needMenu('packing.weigh', 'packing.search'), (req, res) => {
+    const sack = get<any>('SELECT * FROM packings WHERE id = ?', [req.params.id]);
+    if (!sack) throw new HttpError(404, 'Not found');
+    const only: number[] | null = Array.isArray(req.body.ids) && req.body.ids.length ? req.body.ids.map(Number) : null;
+    const out = tx(() => {
+      const kids = all<any>('SELECT * FROM packings WHERE parent_id = ? ORDER BY id', [sack.id]).filter((k) => !only || only.includes(k.id));
+      if (!kids.length) throw new HttpError(400, 'ไม่มีกล่องในกระสอบ / 没有包');
+      for (const k of kids) run('UPDATE packings SET parent_id = NULL, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [req.user.username, k.id]);
+      const left = get<any>('SELECT COUNT(*) AS n FROM packings WHERE parent_id = ?', [sack.id]).n;
+      if (!left) {
+        if (get('SELECT 1 FROM packing_items WHERE packing_id = ?', [sack.id])) throw new HttpError(409, `${sack.packing_code}: กระสอบมีรายการสินค้า แยกไม่ได้`);
+        run('DELETE FROM packings WHERE id = ?', [sack.id]);
+      } else {
+        run(`DELETE FROM packing_customers WHERE packing_id = ? AND customer_id NOT IN (SELECT customer_id FROM packings WHERE parent_id = ?)`, [sack.id, sack.id]);
+      }
+      audit(req.user.username, 'split', 'packings', sack.id, { parcels: kids.map((k) => k.packing_code), deleted: !left });
+      return { ok: true, deleted: !left, parcels: kids.map((k) => k.id) };
+    });
+    res.json(out);
   });
   r.put('/packing/:id', needMenu('packing.search', 'packing.new', 'shipment.summary', 'packing.weigh'), (req, res) => {
     const p = get<any>('SELECT * FROM packings WHERE id = ?', [req.params.id]);
     if (!p) throw new HttpError(404, 'Not found');
     const b = { ...p, ...req.body };
+    if (p.parent_id && 'shipment_id' in req.body && (req.body.shipment_id || null) != p.shipment_id) throw inSackError(p);
     if (get('SELECT 1 FROM shipment_summaries WHERE shipment_id = ? AND customer_id = ?', [p.shipment_id, p.customer_id]) &&
       ['weight', 'cubic1', 'cubic2', 'cubic3', 'rate', 'rate_type', 'shipment_id'].some((k) => k in req.body && req.body[k] != p[k])) {
       throw new HttpError(409, 'สรุปยอดแล้ว — undo the shipping summary for this customer first');
@@ -225,6 +251,7 @@ export function logisticsRouter() {
         b.remark || null, b.tracking_no || null, transportOf(b.transport), b.rate_type || null, b.rate === '' || b.rate == null ? null : Number(b.rate),
         b.shipment_id ? b.off_china_date || null : null, req.user.username, p.id]);
     if ('other_customer_ids' in req.body) setOtherCustomers(p.id, b.customer_id, req.body.other_customer_ids);
+    syncChildren(p.id);
     audit(req.user.username, 'update', 'packings', p.id, req.body);
     res.json(packingDetail(p.id));
   });
@@ -232,6 +259,7 @@ export function logisticsRouter() {
     const p = get<any>('SELECT * FROM packings WHERE id = ?', [req.params.id]);
     if (!p) throw new HttpError(404, 'Not found');
     if (p.off_china_date) throw new HttpError(409, 'Box is already loaded on a container — unload it first');
+    if (get('SELECT 1 FROM packings WHERE parent_id = ?', [p.id])) throw new HttpError(409, `${p.packing_code}: แยกกระสอบก่อน / 先拆包`);
     run('DELETE FROM packings WHERE id = ?', [p.id]);
     audit(req.user.username, 'delete', 'packings', p.id, p);
     res.json({ ok: true });
@@ -331,11 +359,13 @@ export function logisticsRouter() {
     }
     if (!p && /^\d+$/.test(code)) p = get<any>('SELECT * FROM packings WHERE shipment_id = ? AND ctn = ?', [sid, Number(code)]);
     if (!p) throw new HttpError(404, `ไม่พบเลขกล่อง / 找不到这个包号: ${code}`);
+    if (p.parent_id) throw inSackError(p);
     if (p.shipment_id && p.shipment_id !== sid && p.off_china_date) throw new HttpError(409, `${p.packing_code} is already loaded on another shipment`);
     const ctn = req.body.ctn ?? (get<any>('SELECT COALESCE(MAX(ctn),0) AS m FROM packings WHERE shipment_id = ?', [sid]).m + 1);
     const no = req.body.no ?? (get<any>('SELECT COUNT(*) AS n FROM packings WHERE shipment_id = ? AND customer_id = ?', [sid, p.customer_id]).n + (p.shipment_id === sid ? 0 : 1));
     run('UPDATE packings SET shipment_id = ?, off_china_date = ?, ctn = COALESCE(ctn, ?), no = COALESCE(no, ?), updated_by = ? WHERE id = ?',
       [sid, req.body.date || today(), ctn, no, req.user.username, p.id]);
+    syncChildren(p.id);
     void notifyStatus('off_china', { packing_code: p.packing_code, shipment: s.code });
     res.json(packingDetail(p.id));
   });
@@ -345,7 +375,12 @@ export function logisticsRouter() {
     if (get('SELECT 1 FROM shipment_summaries WHERE shipment_id = ? AND customer_id = ?', [p.shipment_id, p.customer_id])) {
       throw new HttpError(409, 'สรุปยอดแล้ว — undo the shipping summary first');
     }
+    if (p.parent_id) throw inSackError(p);
+    if (get(`SELECT 1 FROM packings ch JOIN shipment_summaries ss ON ss.shipment_id = ch.shipment_id AND ss.customer_id = ch.customer_id WHERE ch.parent_id = ?`, [p.id])) {
+      throw new HttpError(409, 'สรุปยอดแล้ว — undo the shipping summary first');
+    }
     run('UPDATE packings SET off_china_date = NULL, shipment_id = NULL WHERE id = ?', [p.id]);
+    syncChildren(p.id);
     res.json({ ok: true });
   });
   // status steps of a round (ขึ้นตู้แล้ว → ระหว่างทาง → … → นำจัดส่งแล้ว), with history
@@ -413,6 +448,10 @@ export function logisticsRouter() {
   r.post('/shipments/:id/summary/:customerId', needMenu('shipment.summary'), (req, res) => {
     const sid = Number(req.params.id); const cid = Number(req.params.customerId);
     if (get('SELECT 1 FROM shipment_summaries WHERE shipment_id = ? AND customer_id = ?', [sid, cid])) throw new HttpError(409, 'สรุปยอดแล้ว / Already summarized');
+    // parcels in a sack are charged on their own weight, so they must be weighed (usually after the split) first
+    const sacked = get<any>(`SELECT GROUP_CONCAT(p.packing_code, ', ') AS codes FROM packings p
+      WHERE p.parent_id IS NOT NULL AND p.shipment_id = ? AND p.customer_id = ? AND COALESCE(p.weight, 0) = 0`, [sid, cid])?.codes;
+    if (sacked) throw new HttpError(409, `${sacked}: อยู่ในกระสอบและยังไม่ได้ชั่ง — แยกกระสอบแล้วชั่งก่อนสรุปยอด / 先拆包称重`);
     const currency = (req.body.currency === 'CNY' ? 'CNY' : 'THB') as Currency;
     const ch = shipmentCustomerCharges(sid, cid, currency);
     const s = get<any>('SELECT * FROM shipments WHERE id = ?', [sid]);

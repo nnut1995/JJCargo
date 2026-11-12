@@ -110,22 +110,27 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { transport: 'ship' } });
   assert.ok((await call('/packing?transport=ship')).some((x: any) => x.id === pkOrd.created[0].id));
   await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { transport: 'plane' }, expect: 400 });
-  // รวมกล่อง: small parcels of one customer become one box (oldest keeps its code), weight cleared for re-weighing
-  const small = await Promise.all(['SF1', 'SF2', 'SF1'].map((tr, i) => call('/packing', { body: { customer_id: b.id, tracking_no: tr, weight: 0.5,
-    cubic1: 10, cubic2: 10, cubic3: 10, remark: i === 0 ? 'fragile' : '', styles: [{ style_id: clothes.id, quantity: 2 }] } })));
+  // กระสอบรวม: small parcels (any customers) go into one sack; parcels keep code/customer, follow the sack, are charged after the split
+  const small = await Promise.all([b.id, b.id, a.id].map((cid) => call('/packing', { body: { customer_id: cid, tracking_no: 'SF' + cid } })));
   const smallIds = small.map((x: any) => x.created[0].id);
   await call('/packing/merge', { body: { ids: [smallIds[0]] }, expect: 400 });
-  await call('/packing/merge', { body: { ids: [smallIds[0], pk1.created[0].id] }, expect: 409 }); // another customer
-  const merged = await call('/packing/merge', { body: { ids: smallIds } });
-  assert.equal(merged.id, smallIds[0]);
-  assert.equal(merged.weight, 0);
-  assert.equal(merged.tracking_no, 'SF1, SF2');
-  assert.equal(merged.styles.length, 1);
-  assert.equal(merged.styles[0].quantity, 6);
-  assert.ok(merged.remark.includes('fragile') && merged.remark.includes(small[1].created[0].code));
-  await call(`/packing/${smallIds[1]}`, { expect: 404 });
-  assert.ok((await call(`/packing?unmeasured=1&customer_id=${b.id}`)).some((x: any) => x.id === merged.id));
-  await call(`/packing/${merged.id}`, { method: 'DELETE' });
+  const sack = await call('/packing/merge', { body: { ids: smallIds.slice(0, 2) } });
+  assert.equal(sack.children.length, 2);
+  assert.equal(sack.customer_id, b.id);
+  const sack2 = await call('/packing/merge', { body: { ids: [sack.id, smallIds[2]] } }); // add another customer's parcel to the sack
+  assert.equal(sack2.id, sack.id);
+  assert.equal(sack2.children.length, 3);
+  assert.deepEqual(sack2.other_customer_ids, [a.id]);
+  await call('/packing/merge', { body: { ids: [smallIds[0], smallIds[2]] }, expect: 409 }); // already in a sack
+  const inWeigh = await call('/packing?unmeasured=1');
+  assert.ok(inWeigh.some((x: any) => x.id === sack.id) && !inWeigh.some((x: any) => smallIds.includes(x.id)));
+  await call(`/packing/${sack.id}`, { method: 'DELETE', expect: 409 });
+  const split1 = await call(`/packing/${sack.id}/split`, { body: { ids: [smallIds[2]] } });
+  assert.equal(split1.deleted, false);
+  assert.deepEqual((await call(`/packing/${sack.id}`)).other_customer_ids, []);
+  assert.equal((await call(`/packing/${sack.id}/split`, { body: {} })).deleted, true);
+  await call(`/packing/${sack.id}`, { expect: 404 });
+  for (const id of smallIds) await call(`/packing/${id}`, { method: 'DELETE' });
   // secondary customers: box shows up under them too, shipping stays with the main customer
   await call(`/packing/${pkOrd.created[0].id}`, { method: 'PUT', body: { other_customer_ids: [a.id, b.id] } });
   const withOther = await call(`/packing/${pkOrd.created[0].id}`);
@@ -171,6 +176,19 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   await call(`/shipments/${ship.id}/status`, { body: { status: 'inspect_th', date: d, note: 'X-ray' } });
   assert.equal((await call(`/shipments/${ship.id}/status`)).length, 2);
   assert.equal((await call('/r/shipments')).find((s: any) => s.id === ship.id).status, 'inspect_th');
+  // a sack goes on a round as one box; its parcels follow, are not loadable alone, and must be weighed before the summary
+  const ship2 = await call('/r/shipments', { body: { code: 'JJ-SACK-' + d.replace(/-/g, ''), date: d } });
+  const parcels = await call('/packing', { body: { customer_id: b.id, boxes: 2 } });
+  const bag = await call('/packing/merge', { body: { ids: parcels.created.map((x: any) => x.id) } });
+  await call(`/shipments/${ship2.id}/load`, { body: { code: parcels.created[0].code, date: d }, expect: 409 });
+  await call(`/shipments/${ship2.id}/load`, { body: { code: bag.packing_code, date: d } });
+  assert.ok((await call(`/packing/${parcels.created[1].id}`)).off_china_date);
+  await call(`/shipments/${ship2.id}/summary/${b.id}`, { body: { currency: 'THB' }, expect: 409 });
+  await call(`/packing/${bag.id}/split`, { body: {} });
+  const after = await call(`/packing/${parcels.created[0].id}`);
+  assert.equal(after.shipment_id, ship2.id); // still on the round after the split
+  await call('/packing/measure', { body: { rows: parcels.created.map((c: any) => ({ id: c.id, weight: 1, cubic1: 10, cubic2: 10, cubic3: 10 })) } });
+  assert.equal((await call(`/shipments/${ship2.id}/summary`)).find((x: any) => x.id === b.id).total, 50);
 
   log('bank statement import + payment notice + check');
   await call('/bank/import', { body: { bank_id: kbank.id, rows: [

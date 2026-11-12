@@ -88,7 +88,8 @@ export function packingPrice(p: any, rates: Rates, currency: Currency) {
 export function shipmentCustomerCharges(shipmentId: number, customerId: number, currency: Currency) {
   const rates = customerRates(customerId);
   const packings = all<any>(
-    'SELECT * FROM packings WHERE shipment_id = ? AND customer_id = ? ORDER BY ctn, no, id', [shipmentId, customerId],
+    // a sack (กระสอบรวม) is only the container for its parcels; the parcels are what gets charged
+    'SELECT * FROM packings p WHERE shipment_id = ? AND customer_id = ? AND NOT EXISTS (SELECT 1 FROM packings ch WHERE ch.parent_id = p.id) ORDER BY ctn, no, id', [shipmentId, customerId],
   ).map((p) => ({ ...p, ...packingPrice(p, rates, currency) }));
   const others = all<any>('SELECT * FROM shipment_other_amounts WHERE shipment_id = ? AND customer_id = ? ORDER BY id', [shipmentId, customerId]);
   const shipping = round2(packings.reduce((s, p) => s + p.price, 0));
