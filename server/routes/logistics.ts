@@ -479,6 +479,31 @@ export function logisticsRouter() {
     });
     res.json({ ok: true });
   });
+  // Bulk rate: set charge-by + rate on many boxes of a round at once (selected boxes, or every box of selected customers).
+  // Sacks are skipped (their parcels are what gets charged); posted customers must be undone first.
+  r.post('/shipments/:id/rates', needMenu('shipment.summary'), (req, res) => {
+    const sid = Number(req.params.id);
+    const rateType = req.body.rate_type || null;
+    if (rateType && !['kilo', 'cubic', 'fixed'].includes(rateType)) throw new HttpError(400, 'Bad rate type');
+    const rate = rateType ? Number(req.body.rate) : null;
+    if (rateType && !(Number.isFinite(rate) && rate! >= 0 && req.body.rate !== '' && req.body.rate != null)) throw new HttpError(400, 'ใส่เรท / 请输入单价');
+    const ids = (Array.isArray(req.body.packing_ids) ? req.body.packing_ids : []).map(Number).filter(Boolean);
+    const cids = (Array.isArray(req.body.customer_ids) ? req.body.customer_ids : []).map(Number).filter(Boolean);
+    if (!ids.length && !cids.length) throw new HttpError(400, 'เลือกรายการก่อน / 请先选择');
+    const chargeable = 'p.shipment_id = ? AND NOT EXISTS (SELECT 1 FROM packings ch WHERE ch.parent_id = p.id)';
+    const boxes = all<any>(`SELECT p.id, p.packing_code, p.customer_id FROM packings p WHERE ${chargeable} AND (
+        p.id IN (${ids.map(() => '?').join(',') || 'NULL'}) OR p.customer_id IN (${cids.map(() => '?').join(',') || 'NULL'}))`, [sid, ...ids, ...cids]);
+    if (!boxes.length) throw new HttpError(404, 'ไม่พบกล่องที่คิดค่าขนส่งได้ / 没有可计费的包');
+    const posted = all<any>(`SELECT DISTINCT c.code FROM shipment_summaries ss JOIN customers c ON c.id = ss.customer_id
+      WHERE ss.shipment_id = ? AND ss.customer_id IN (${[...new Set(boxes.map((b) => b.customer_id))].map(() => '?').join(',')})`,
+      [sid, ...new Set(boxes.map((b) => b.customer_id))]).map((x) => x.code);
+    if (posted.length) throw new HttpError(409, `${posted.join(', ')}: สรุปยอดแล้ว — ยกเลิกสรุปยอดก่อน / 已汇总，请先取消汇总`);
+    tx(() => {
+      for (const b of boxes) run('UPDATE packings SET rate_type = ?, rate = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [rateType, rate, req.user.username, b.id]);
+      audit(req.user.username, 'bulk_rate', 'shipments', sid, { rate_type: rateType, rate, boxes: boxes.map((b) => b.packing_code) });
+    });
+    res.json({ ok: true, updated: boxes.length });
+  });
   r.post('/shipments/:id/summary/:customerId/paid', needMenu('shipment.summary'), (req, res) => {
     run('UPDATE shipment_summaries SET paid = ? WHERE shipment_id = ? AND customer_id = ?', [req.body.paid ? 1 : 0, req.params.id, req.params.customerId]);
     res.json({ ok: true });

@@ -64,7 +64,7 @@ scripts/flow.ts        full business flow through the API with assertions (used 
   Cash accounts (`is_cash=1`) have no export, so `postCash()` writes their lines automatically from expenses,
   transfers, other income, exchange items and bill payments. Don't auto-post to non-cash accounts — it would double count after import.
 - **Shipping price** (`logic.packingPrice`): m³ = w×l×h/1e6; customer `calc_type` kilo | cubic | mix (higher of the two);
-  per-box `rate_type` kilo|cubic|fixed overrides. Rates fall back to settings. Posting a summary freezes each box's basis and
+  per-box `rate_type` kilo|cubic|fixed overrides. Bulk rate on the summary screen: `POST /api/shipments/:id/rates` (`packing_ids` or `customer_ids`; skips sacks, blocked for posted customers). Rates fall back to settings. Posting a summary freezes each box's basis and
   locks weight/size/round edits until undone.
 - **Checked records** (`checked=1`) can't be edited or deleted; who may check what is `verify_items` (admins may check all).
 - Supplier bill payment deducts the customer's **CNY** balance by amount + service fee; blocked if balance + credit_limit is short.
