@@ -80,15 +80,11 @@ export function LabelDoc({ packings }: { packings: any[] }) {
 }
 
 // Fixed terms + contacts printed at the bottom of every goods receipt (text from JJ Cargo, 2026-11-12)
-const RECEIPT_TERMS = `หมายเหตุ 备注 :
-1. บริษัทไม่รับขนส่งสินค้าที่ผิดกฎหมาย หากพบสินค้าดังกล่าว ลูกค้าจะต้องได้รับโทษทางกฎหมาย
-如发现有违禁品，采购者和供货商需自己承担法律责任。
-2. ทางบริษัทเพียงช่วยรับสินค้าให้ลูกค้าเท่านั้น ไม่สามารถรับผิดชอบค่าสินค้าให้ลูกค้าได้
-本公司只代客户收货，概不负责货款。
-
-เบอร์ติดต่อ 联系方式
-จีน 中国：13533358790
-ไทย 泰国：0624245141`;
+const RECEIPT_TERMS: [string, string][] = [
+  ['บริษัทไม่รับขนส่งสินค้าที่ผิดกฎหมาย หากพบสินค้าดังกล่าว ลูกค้าจะต้องได้รับโทษทางกฎหมาย', '如发现有违禁品，采购者和供货商需自己承担法律责任。'],
+  ['ทางบริษัทเพียงช่วยรับสินค้าให้ลูกค้าเท่านั้น ไม่สามารถรับผิดชอบค่าสินค้าให้ลูกค้าได้', '本公司只代客户收货，概不负责货款。'],
+];
+const RECEIPT_CONTACTS: [string, string][] = [['จีน 中国', '13533358790'], ['ไทย 泰国', '0624245141']];
 
 /** ใบรับของ — handed to the person who dropped the goods off. */
 export function ReceiptDoc({ packings }: { packings: any[] }) {
@@ -101,21 +97,36 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
   if (mixedRefs(packings)) return <div className="doc receipt"><p><b>{t('These boxes have different ref numbers: one goods receipt per ref.', 'กล่องที่เลือกมีเลข ref ต่างกัน ออกใบรับของรวมกันไม่ได้ (1 ใบต่อ 1 เลข ref)', '所选包裹的 ref 号不同，不能开同一张收货单')}</b></p>
     <p>{[...new Set(packings.map(refBase))].map((r) => r || '—').join(', ')}</p></div>;
   return (
-    <div className="doc receipt">
-      <div className="doc-head">
-        <div><h2>{lookups.settings.print_text} · {t('Goods receipt', 'ใบรับสินค้า', '收货单')}</h2>
-          <div>{t('Date', 'วันที่', '日期')}: {now.toLocaleDateString('en-CA')} {now.toTimeString().slice(0, 5)}</div></div>
-        <div style={{ textAlign: 'right' }}>{t('Customer', 'รหัสลูกค้า', '客户')}<div className="code" style={{ fontSize: 28, fontWeight: 700 }}>{first.customer_code}</div></div>
+    <div className="doc rcpt">
+      <header className="rcpt-head">
+        <div>
+          <div className="rcpt-brand">{lookups.settings.print_text}</div>
+          <div className="rcpt-title">ใบรับสินค้า <span>收货单</span></div>
+        </div>
+        <div className="rcpt-date">
+          <div>{t('Date', 'วันที่', '日期')}</div>
+          <b>{now.toLocaleDateString('en-CA')}</b>
+          <span>{now.toTimeString().slice(0, 5)}</span>
+        </div>
+      </header>
+      <div className="rcpt-facts">
+        <div><span>รหัสลูกค้า 客户</span><b>{first.customer_code || '—'}</b></div>
+        <div><span>เลข ref 单号</span><b>{refBase(first) || '—'}</b></div>
+        <div><span>จำนวน 件数</span><b>{packings.length} <small>กล่อง 件</small></b></div>
       </div>
-      <table>
-        <thead><tr><th>{t('Ref', 'เลข ref', 'ref 号')}</th><th style={{ textAlign: 'right' }}>{t('Boxes', 'จำนวนกล่อง', '包数')}</th></tr></thead>
-        <tbody><tr><td style={{ fontSize: 20, fontWeight: 700 }}>{refBase(first) || '—'}</td><td style={{ textAlign: 'right', fontSize: 20, fontWeight: 700 }}>{packings.length} {t('boxes', 'กล่อง', '包')}</td></tr></tbody>
-      </table>
-      {notes.length > 0 && <div style={{ marginTop: 12 }}>{notes.join(' · ')}</div>}
-      <div style={{ marginTop: 16, whiteSpace: 'pre-line', fontSize: 13 }}>{RECEIPT_TERMS}</div>
-      <div className="row" style={{ justifyContent: 'space-between', marginTop: 40 }}>
-        <span>{t('Sender', 'ผู้ส่ง', '送货人')} ____________________</span><span>{t('Received by', 'ผู้รับ', '收货人')} ____________________</span>
-      </div>
+      {notes.length > 0 && <div className="rcpt-note"><span>{t('Remark', 'หมายเหตุ', '备注')}</span>{notes.join(' · ')}</div>}
+      <section className="rcpt-terms">
+        <h3>หมายเหตุ 备注</h3>
+        <ol>{RECEIPT_TERMS.map(([th, zh]) => <li key={th}>{th}<span>{zh}</span></li>)}</ol>
+        <div className="rcpt-contacts">
+          <span>เบอร์ติดต่อ 联系方式</span>
+          {RECEIPT_CONTACTS.map(([where, tel]) => <span key={tel}>{where}: <b>{tel}</b></span>)}
+        </div>
+      </section>
+      <footer className="rcpt-sign">
+        <div><i />ผู้ส่ง 送货人</div>
+        <div><i />ผู้รับ 收货人</div>
+      </footer>
     </div>
   );
 }
