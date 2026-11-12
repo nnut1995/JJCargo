@@ -194,6 +194,15 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   assert.equal(after.shipment_id, ship2.id); // still on the round after the split
   await call('/packing/measure', { body: { rows: parcels.created.map((c: any) => ({ id: c.id, weight: 1, cubic1: 10, cubic2: 10, cubic3: 10 })) } });
   assert.equal((await call(`/shipments/${ship2.id}/summary`)).find((x: any) => x.id === b.id).total, 50);
+  // bulk rate: every box of a customer, or chosen boxes; posted customers are locked
+  await call(`/shipments/${ship2.id}/rates`, { body: { customer_ids: [b.id], rate_type: 'kilo', rate: 40 } });
+  assert.equal((await call(`/shipments/${ship2.id}/summary`)).find((x: any) => x.id === b.id).total, 80);
+  await call(`/shipments/${ship2.id}/rates`, { body: { packing_ids: [parcels.created[0].id], rate_type: 'fixed', rate: 15 } });
+  assert.equal((await call(`/shipments/${ship2.id}/summary`)).find((x: any) => x.id === b.id).total, 55);
+  await call(`/shipments/${ship2.id}/rates`, { body: { customer_ids: [b.id], rate_type: 'kilo', rate: '' }, expect: 400 });
+  await call(`/shipments/${ship2.id}/rates`, { body: { customer_ids: [b.id], rate_type: '' } });
+  assert.equal((await call(`/shipments/${ship2.id}/summary`)).find((x: any) => x.id === b.id).total, 50);
+  await call(`/shipments/${ship.id}/rates`, { body: { customer_ids: [a.id], rate_type: 'kilo', rate: 1 }, expect: 409 });
 
   log('bank statement import + payment notice + check');
   await call('/bank/import', { body: { bank_id: kbank.id, rows: [

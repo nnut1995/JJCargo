@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, cbm, sum } from '../lib';
 import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, DateRange, Badge, Modal, PrintModal, useAction, useAsk, useToast, Empty, Bi } from '../ui';
-import { Printer, Check, Plus, X, Pencil, ScanBarcode, FileSpreadsheet } from 'lucide-react';
+import { Printer, Check, Plus, X, Pencil, ScanBarcode, FileSpreadsheet, Tags } from 'lucide-react';
 import { downloadXlsx } from '../xlsx';
 import { CrudPage, EditModal, type FieldDef } from './Crud';
 import { SHIPMENT_STATUSES } from '../../shared/statuses';
@@ -234,6 +234,11 @@ export function ShipmentSummary() {
   const [cid, setCid] = useState<number | null>(null);
   const detail = useApi<any>(sid && cid ? `/shipments/${sid}/summary/${cid}` : null, { currency });
   const [rateEdit, setRateEdit] = useState<any>(null);
+  const [custSel, setCustSel] = useState<Set<any>>(new Set());
+  const [boxSel, setBoxSel] = useState<Set<any>>(new Set());
+  const [bulk, setBulk] = useState<null | { by: 'customers' | 'boxes'; rate_type: string; rate: string }>(null);
+  useEffect(() => { setCustSel(new Set()); }, [sid]);
+  useEffect(() => { setBoxSel(new Set()); }, [sid, cid]);
   const [other, setOther] = useState({ detail: '', amount: '' });
   const [print, setPrint] = useState(false);
   const { run } = useAction();
@@ -257,8 +262,10 @@ export function ShipmentSummary() {
       {!sid && <Card><Empty>{t('Choose a shipment round above to see its customers and charges', 'เลือกรอบขนส่งด้านบน เพื่อดูลูกค้าและค่าขนส่งในรอบนั้น', '请先选择发货单')}</Empty></Card>}
       {sid && (
         <div className="split">
-          <Card title={t('Customers on this round', 'ลูกค้าในรอบนี้', '本发货单客户')}>
-            <Table rows={list.data} onRow={(r) => setCid(r.id)} rowClass={(r) => (r.id === cid ? 'on' : '')} columns={[
+          <Card title={t('Customers on this round', 'ลูกค้าในรอบนี้', '本发货单客户')}
+            actions={<button disabled={!custSel.size} onClick={() => setBulk({ by: 'customers', rate_type: 'kilo', rate: '' })}><Tags size={16} aria-hidden /> {t('Set rate', 'ตั้งเรท', '设单价')}{custSel.size ? ` (${custSel.size})` : ''}</button>}>
+            <Table rows={list.data} onRow={(r) => setCid(r.id)} rowClass={(r) => (r.id === cid ? 'on' : '')}
+              selectable={(r) => !r.summary} selected={custSel} onSelect={setCustSel} columns={[
               { key: 'code', label: t('Customer', 'ลูกค้า', '客户') },
               { key: 'boxes', label: t('Boxes', 'กระสอบ', '包'), align: 'right' },
               { key: 'weight', label: 'kg', money: true, sum: true },
@@ -271,13 +278,14 @@ export function ShipmentSummary() {
           {d && (
             <Card title={<>{d.customer.code} · {d.currency} {posted && <Badge tone="warn">{t('Posted', 'สรุปยอดแล้ว', '已汇总')}</Badge>}</>}
               actions={<>
+                {!posted && <button disabled={!boxSel.size} onClick={() => setBulk({ by: 'boxes', rate_type: 'kilo', rate: '' })}><Tags size={16} aria-hidden /> {t('Set rate', 'ตั้งเรท', '设单价')}{boxSel.size ? ` (${boxSel.size})` : ''}</button>}
                 <button onClick={() => setPrint(true)}><Printer size={16} aria-hidden /> {t('Print', 'ปริ้น', '打印')}</button>
                 {!posted && <button className="primary" onClick={async () => { if (await run(() => api(`/shipments/${sid}/summary/${cid}`, { body: { currency } }))) reloadAll(); }}>{t('Post to balance', 'สรุปยอด', '汇总')}</button>}
                 {posted && !d.summary.paid && <button onClick={async () => { if (await ask(t('Undo the posted summary for this customer?', 'ยกเลิกการสรุปยอดของลูกค้ารายนี้?', '取消此客户的汇总?'), { ok: t('Undo post', 'ยกเลิกสรุปยอด', '取消汇总') }) && await run(() => api(`/shipments/${sid}/summary/${cid}`, { method: 'DELETE' }))) reloadAll(); }}>{t('Undo post', 'ยกเลิกสรุปยอด', '取消汇总')}</button>}
                 {posted && <button onClick={async () => { if (await run(() => api(`/shipments/${sid}/summary/${cid}/paid`, { body: { paid: !d.summary.paid } }))) reloadAll(); }}>{d.summary.paid ? t('Mark unpaid', 'ยังไม่จ่าย', '未付') : t('Mark paid', 'จ่ายแล้ว', '已付')}</button>}
               </>}>
               <p className="muted">{t('Rule', 'คิดตาม', '计算')}: {d.rates.calc_type} · kg {money(d.currency === 'CNY' ? d.rates.kilo_yuan : d.rates.kilo)} · m³ {money(d.currency === 'CNY' ? d.rates.cubic_yuan : d.rates.cubic)}</p>
-              <Table rows={d.packings} onRow={(r) => !posted && setRateEdit({ id: r.id, rate_type: r.rate_type || '', rate: r.rate_type ? r.rate : '', weight: r.weight, cubic1: r.cubic1, cubic2: r.cubic2, cubic3: r.cubic3 })} columns={[
+              <Table rows={d.packings} selectable={posted ? undefined : () => true} selected={boxSel} onSelect={setBoxSel} onRow={(r) => !posted && setRateEdit({ id: r.id, rate_type: r.rate_type || '', rate: r.rate_type ? r.rate : '', weight: r.weight, cubic1: r.cubic1, cubic2: r.cubic2, cubic3: r.cubic3 })} columns={[
                 { key: 'packing_code', label: t('Box', 'เลขกระสอบ', '包号') },
                 { key: 'weight', label: 'kg', align: 'right' },
                 { key: 'cbm', label: 'm³', render: (r) => r.cbm.toFixed(4), align: 'right' },
@@ -321,6 +329,32 @@ export function ShipmentSummary() {
             </div></Field>
           </Grid>
           <p className="muted">m³ = {cbm({ cubic1: Number(rateEdit.cubic1), cubic2: Number(rateEdit.cubic2), cubic3: Number(rateEdit.cubic3) }).toFixed(4)}</p>
+        </Modal>
+      )}
+      {bulk && (
+        <Modal open title={bulk.by === 'customers'
+            ? `${t('Set rate for all boxes of', 'ตั้งเรทกล่องทั้งหมดของลูกค้า', '设置客户所有包的单价')} ${custSel.size} ${t('customers', 'ราย', '位')}`
+            : `${t('Set rate for', 'ตั้งเรท', '设置单价')} ${boxSel.size} ${t('boxes', 'กล่อง', '包')}`}
+          onClose={() => setBulk(null)}
+          footer={<button className="primary" onClick={async () => {
+            const body = { rate_type: bulk.rate_type, rate: bulk.rate, ...(bulk.by === 'customers' ? { customer_ids: [...custSel] } : { packing_ids: [...boxSel] }) };
+            const r = await run(() => api(`/shipments/${sid}/rates`, { body }), t('Rates updated', 'อัปเดตเรทแล้ว', '已更新单价'));
+            if (r) { setBulk(null); setCustSel(new Set()); setBoxSel(new Set()); reloadAll(); }
+          }}>{t('Save', 'บันทึก', '保存')}</button>}>
+          <Grid cols={2}>
+            <Field label={t('Charge by', 'คิดตาม', '计算')}>
+              <select value={bulk.rate_type} onChange={(e) => setBulk({ ...bulk, rate_type: e.target.value })}>
+                <option value="">{t("Customer's rule (clear custom rate)", 'ตามลูกค้า (ล้างเรทที่ตั้งไว้)', '按客户 (清除单价)')}</option>
+                <option value="kilo">{t('Per kg', 'กิโล', '公斤')}</option>
+                <option value="cubic">{t('Per m³', 'คิว', '立方')}</option>
+                <option value="fixed">{t('Fixed price per box', 'ราคาเหมาต่อกล่อง', '每包固定价格')}</option>
+              </select>
+            </Field>
+            <Field label={t('Rate', 'เรท', '单价')}><input type="number" step="any" autoFocus value={bulk.rate} disabled={!bulk.rate_type} onChange={(e) => setBulk({ ...bulk, rate: e.target.value })} /></Field>
+          </Grid>
+          <p className="muted">{bulk.by === 'customers'
+            ? t('Applies to every box of the selected customers on this round. Sacks are skipped; their parcels are charged.', 'ใช้กับทุกกล่องของลูกค้าที่เลือกในรอบนี้ (ไม่รวมกระสอบรวม คิดตามพัสดุข้างใน) ราคาจะคำนวณใหม่ทันที', '适用于所选客户本单所有包（不含合包，按里面的包裹计费），价格立即重新计算')
+            : t('Prices are recalculated right away.', 'ราคาจะคำนวณใหม่ทันที', '价格立即重新计算')}</p>
         </Modal>
       )}
       <PrintModal open={print && !!d} onClose={() => setPrint(false)} title={t('Shipping bill', 'ใบแจ้งค่าขนส่ง', '运费单')}>{d && <ShippingBill d={d} />}</PrintModal>
