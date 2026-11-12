@@ -91,11 +91,14 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
         <div style={{ textAlign: 'right' }}>{t('Customer', 'รหัสลูกค้า', '客户')}<div className="code" style={{ fontSize: 28, fontWeight: 700 }}>{first.customer_code}</div></div>
       </div>
       <table>
-        <thead><tr><th>#</th><th>{t('Box', 'เลขกล่อง', '包号')}</th><th>{t('Contents', 'สินค้า', '产品')}</th><th>kg</th><th>{t('Remark', 'หมายเหตุ', '备注')}</th></tr></thead>
+        <thead><tr><th>#</th><th>{t('Box', 'เลขกล่อง', '包号')}</th><th>{t('Order / track / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 快递单号 / ref')}</th><th>{t('Contents', 'สินค้า', '产品')}</th><th>kg</th><th>{t('Remark', 'หมายเหตุ', '备注')}</th></tr></thead>
         <tbody>{packings.map((p, i) => (
           <tr key={p.id}><td>{i + 1}</td><td>{p.packing_code}</td>
-            <td>{[...(p.items || []).map((x: any) => `${orderLabel(x)} ×${x.quantity}`), ...(p.styles || []).map((s: any) => `${pick({ th: s.style_th, zh: s.style_zh, en: s.style_en }, lang)} ×${s.quantity}`)].join(', ')}</td>
-            <td>{p.weight || ''}</td><td>{p.remark || ''}{p.tracking_no ? ` · ${p.tracking_no}` : ''}</td></tr>
+            <td>{[...new Set<string>((p.items || []).map(orderLabel))].map((o) => <div key={o}>{o}</div>)}
+              {p.tracking_no && <div>{p.tracking_no}</div>}
+              {p.reference_id && <div>{p.reference_id}</div>}</td>
+            <td>{[...(p.items || []).map((x: any) => `${x.product_id || pick({ th: x.style_th, zh: x.style_zh, en: x.style_en }, lang) || orderLabel(x)} ×${x.quantity}`), ...(p.styles || []).map((s: any) => `${pick({ th: s.style_th, zh: s.style_zh, en: s.style_en }, lang)} ×${s.quantity}`)].join(', ')}</td>
+            <td>{p.weight || ''}</td><td>{p.remark || ''}</td></tr>
         ))}</tbody>
       </table>
       <div className="total-line"><span>{t('Total boxes', 'รวมจำนวน', '总包数')}: <b>{packings.length}</b> {t('boxes', 'กล่อง', '包')}</span></div>
