@@ -22,6 +22,7 @@ interface Resource {
   softDelete?: string; // column name
   bools?: string[];
   cash?: (row: any) => Entry[]; // money movements to post on cash accounts
+  validate?: (data: any, row?: any) => void; // extra checks on create (row undefined) / update
 }
 
 const R: Record<string, Resource> = {
@@ -52,10 +53,14 @@ const R: Record<string, Resource> = {
   },
   shipments: {
     table: 'shipments', menus: ['shipment.list', 'packing.offchina', 'packing.new', 'packing.search', 'shipment.summary', 'shipment.search', 'packing.bulk', 'packing.nobill', 'payments', 'customer.payment'],
-    fields: ['code', 'date', 'arrived_date'], required: ['code', 'date'],
+    fields: ['code', 'date', 'arrived_date', 'transport'], required: ['code', 'date', 'transport'],
+    validate: (d) => {
+      if (d.transport !== undefined && d.transport !== null && !['truck', 'ship'].includes(d.transport))
+        throw new HttpError(400, 'เลือกส่งทางรถหรือเรือ / 请选择陆运或海运 (transport: truck | ship)');
+    },
     select: `SELECT t.*, (SELECT COUNT(*) FROM packings p WHERE p.shipment_id = t.id) AS packing_count,
       (SELECT ROUND(SUM(weight),2) FROM packings p WHERE p.shipment_id = t.id) AS total_weight FROM shipments t`,
-    search: ['code'], dateCol: 'date', order: 't.date DESC, t.id DESC', createdBy: true,
+    search: ['code'], dateCol: 'date', filters: ['transport'], order: 't.date DESC, t.id DESC', createdBy: true,
   },
   expense_types: {
     table: 'expense_types', menus: ['expense.thai', 'expense.china'], fields: ['description', 'is_thai'], required: ['description'],
@@ -164,6 +169,7 @@ export function crudRouter() {
     access(req.user, def);
     const data = clean(def, req.body);
     for (const f of def.required || []) if (data[f] === undefined || data[f] === null) throw new HttpError(400, `Missing ${f}`);
+    def.validate?.(data);
     if (def.createdBy) data.created_by = req.user.username;
     const cols = Object.keys(data).map(ident);
     const { id } = run(`INSERT INTO ${def.table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`, cols.map((c) => data[c]));
@@ -182,6 +188,7 @@ export function crudRouter() {
     if (def.verifyKey && row.checked) throw new HttpError(409, 'Already checked — cannot edit');
     if (def.table === 'bank_statements' && !canVerify(req.user, 'bank_statement')) throw new HttpError(403, 'No permission to edit bank statements');
     const data = clean(def, req.body);
+    def.validate?.(data, row);
     const cols = Object.keys(data).map(ident);
     if (cols.length) run(`UPDATE ${def.table} SET ${cols.map((c) => `${c} = ?`).join(',')} WHERE id = ?`, [...cols.map((c) => data[c]), id]);
     if (def.table === 'bank_statements') run('UPDATE bank_statements SET updated_by = ? WHERE id = ?', [req.user.username, id]);

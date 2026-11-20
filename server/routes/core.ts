@@ -54,7 +54,7 @@ export function coreRouter() {
       banks: all('SELECT id, name, nickname, account_name, account_number, is_thai, is_cash, is_active FROM banks ORDER BY is_thai DESC, id'),
       styles: all('SELECT s.id, s.en, s.zh, s.th, u.description AS unit FROM styles s LEFT JOIN style_units u ON u.id = s.unit_id WHERE s.is_deleted = 0 AND s.active = 1 ORDER BY s.id'),
       units: all('SELECT * FROM style_units ORDER BY id'),
-      shipments: all('SELECT id, code, date, arrived_date FROM shipments ORDER BY date DESC, id DESC LIMIT 300'),
+      shipments: all('SELECT id, code, date, arrived_date, transport FROM shipments ORDER BY date DESC, id DESC LIMIT 300'),
       expenseTypes: all('SELECT * FROM expense_types ORDER BY description'),
       provinces: all('SELECT * FROM provinces ORDER BY id'),
       statuses: all('SELECT * FROM payment_statuses ORDER BY id'),

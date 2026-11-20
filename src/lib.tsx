@@ -89,7 +89,7 @@ export interface Lookups {
   banks: { id: number; name: string; nickname?: string; account_name?: string; account_number?: string; is_thai: number; is_cash: number; is_active: number }[];
   styles: { id: number; en?: string; zh?: string; th?: string; unit?: string }[];
   units: { id: number; description: string }[];
-  shipments: { id: number; code: string; date: string; arrived_date?: string }[];
+  shipments: { id: number; code: string; date: string; arrived_date?: string; transport?: string | null }[];
   expenseTypes: { id: number; description: string; is_thai: number }[];
   provinces: { id: number; name: string }[];
   statuses: { id: number; text: string }[];

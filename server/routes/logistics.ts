@@ -386,9 +386,11 @@ export function logisticsRouter() {
     const no = req.body.no ?? (get<any>('SELECT COUNT(*) AS n FROM packings WHERE shipment_id = ? AND customer_id = ?', [sid, p.customer_id]).n + (p.shipment_id === sid ? 0 : 1));
     run('UPDATE packings SET shipment_id = ?, off_china_date = ?, ctn = COALESCE(ctn, ?), no = COALESCE(no, ?), updated_by = ? WHERE id = ?',
       [sid, req.body.date || today(), ctn, no, req.user.username, p.id]);
+    // a box with no transport set goes the way its round goes (truck / ship); a box marked for the other way is loaded but flagged
+    if (s.transport) run('UPDATE packings SET transport = ? WHERE (id = ? OR parent_id = ?) AND transport IS NULL', [s.transport, p.id, p.id]);
     syncChildren(p.id);
     void notifyStatus('off_china', { packing_code: p.packing_code, shipment: s.code });
-    res.json(packingDetail(p.id));
+    res.json({ ...packingDetail(p.id), transport_mismatch: !!(s.transport && p.transport && p.transport !== s.transport) });
   });
   r.post('/shipments/:id/unload', needMenu('packing.offchina'), (req, res) => {
     const p = get<any>('SELECT * FROM packings WHERE id = ? AND shipment_id = ?', [req.body.packing_id, req.params.id]);

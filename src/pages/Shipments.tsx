@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, money, pick, today, cbm, sum } from '../lib';
 import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, DateRange, Badge, Modal, PrintModal, useAction, useAsk, useToast, Empty, Bi } from '../ui';
-import { Printer, Check, Plus, X, Pencil, ScanBarcode, FileSpreadsheet, Tags } from 'lucide-react';
+import { Printer, Check, Plus, X, Pencil, ScanBarcode, FileSpreadsheet, Tags, Truck, Ship, AlertTriangle } from 'lucide-react';
 import { downloadXlsx } from '../xlsx';
 import { CrudPage, EditModal, type FieldDef } from './Crud';
 import { SHIPMENT_STATUSES } from '../../shared/statuses';
@@ -45,6 +45,14 @@ function StatusModal({ s, onClose }: { s: any; onClose: () => void }) {
   );
 }
 
+/** How the round goes to Thailand (shipments.transport): truck or ship. */
+export function TransportBadge({ v }: { v?: string | null }) {
+  const t = useT();
+  if (v === 'truck') return <Badge tone="info"><Truck size={12} aria-hidden /> {t('Truck', 'รถ', '陆运')}</Badge>;
+  if (v === 'ship') return <Badge tone="good"><Ship size={12} aria-hidden /> {t('Ship', 'เรือ', '海运')}</Badge>;
+  return <span className="muted">—</span>;
+}
+
 type RoundDialog = 'load' | 'new';
 
 /** ShipmentForm + OffChinaFrom — shipment rounds (containers / trucks) with loading boxes as a dialog. */
@@ -57,8 +65,8 @@ export function Shipments() {
   const { ask } = useAsk();
   const toast = useToast();
   const [sp, setSp] = useSearchParams();
-  const [q, setQ] = useState<any>({ q: '', from: '', to: '', status: '', arrived: '' });
-  const { data, reload } = useApi<any[]>('/r/shipments', { q: q.q, from: q.from, to: q.to });
+  const [q, setQ] = useState<any>({ q: '', from: '', to: '', status: '', arrived: '', transport: '' });
+  const { data, reload } = useApi<any[]>('/r/shipments', { q: q.q, from: q.from, to: q.to, transport: q.transport });
   const [st, setSt] = useState<any>(null);
   const [edit, setEdit] = useState<any>(null);
   const canEdit = can.menu('shipment.list'), canLoad = can.menu('packing.offchina');
@@ -73,11 +81,14 @@ export function Shipments() {
   const after = async () => { await reload(); await reloadLookups(); };
   const fields: FieldDef[] = [
     { key: 'code', label: t('Round code', 'รหัสรอบขนส่ง', '出货代码'), required: true },
+    { key: 'transport', label: t('Transport', 'ส่งทาง รถ / เรือ', '运输方式'), type: 'radio', required: true,
+      options: [{ value: 'truck', label: t('Truck', 'รถ', '陆运') }, { value: 'ship', label: t('Ship', 'เรือ', '海运') }] },
     { key: 'date', label: t('Departure date', 'วันที่ออกของ', '出货日期'), type: 'date', required: true, default: today() },
     { key: 'arrived_date', label: t('Arrived in Thailand', 'วันที่ถึงไทย', '到达日期'), type: 'date' },
   ];
   const save = async (v: any) => {
     if (!v.code || !v.date) { toast(t('Please fill round code and date', 'กรุณาระบุรหัสรอบและวันที่', '请填写'), 'err'); return; }
+    if (!v.transport) { toast(t('Choose truck or ship', 'กรุณาเลือกส่งทางรถหรือเรือ', '请选择陆运或海运'), 'err'); return; }
     const ok = await run(() => (v.id ? api(`/r/shipments/${v.id}`, { method: 'PUT', body: v }) : api('/r/shipments', { body: v })));
     if (ok) { setEdit(null); if (dialog === 'new') openDialog(null); await after(); }
   };
@@ -96,9 +107,15 @@ export function Shipments() {
         {canEdit && <button className="primary" onClick={() => openDialog('new')}><Plus size={16} aria-hidden /> {t('New round', 'เพิ่มรอบขนส่ง', '新增发货单')}</button>}
       </>}>
       <Card>
-        <Grid cols={5}>
+        <Grid cols={6}>
           <Field label={t('Round code', 'รหัสรอบขนส่ง', '出货代码')}><input value={q.q} onChange={(e) => setQ({ ...q, q: e.target.value })} /></Field>
           <DateRange from={q.from} to={q.to} onChange={(from, to) => setQ({ ...q, from, to })} />
+          <Field label={t('Transport', 'รถ / เรือ', '运输方式')}>
+            <select value={q.transport} onChange={(e) => setQ({ ...q, transport: e.target.value })}>
+              <option value="">{t('All', 'ทั้งหมด', '全部')}</option>
+              <option value="truck">{t('Truck', 'รถ', '陆运')}</option><option value="ship">{t('Ship', 'เรือ', '海运')}</option>
+            </select>
+          </Field>
           <Field label={t('Status', 'สถานะ', '状态')}>
             <select value={q.status} onChange={(e) => setQ({ ...q, status: e.target.value })}>
               <option value="">{t('All', 'ทั้งหมด', '全部')}</option>
@@ -115,6 +132,7 @@ export function Shipments() {
       </Card>
       <Table rows={rows} onRow={canEdit ? (r) => setEdit(r) : undefined} columns={[
         { key: 'code', label: t('Round', 'รอบ', '发货单'), render: (r) => <b>{r.code}</b> },
+        { key: 'transport', label: t('Transport', 'รถ/เรือ', '运输'), render: (r) => <TransportBadge v={r.transport} /> },
         { key: 'date', label: t('Date', 'วันที่', '日期') },
         { key: 'packing_count', label: t('Boxes', 'กระสอบ', '包'), align: 'right', sum: true },
         { key: 'total_weight', label: 'kg', money: true, sum: true },
@@ -163,6 +181,8 @@ function LoadModal({ round, onClose }: { round: number | null; onClose: () => vo
   const [date, setDate] = useState(today());
   const [last, setLast] = useState<any>(null);
   const loaded = useApi<any[]>(sid ? `/shipments/${sid}/packings` : null);
+  const { lookups } = useApp();
+  const cur = lookups.shipments.find((x) => x.id === sid);
   const { run } = useAction();
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => { if (sid) setTimeout(() => ref.current?.focus(), 0); setLast(null); }, [sid]);
@@ -180,13 +200,15 @@ function LoadModal({ round, onClose }: { round: number | null; onClose: () => vo
       <Grid cols={3}>
         <Field label={t('Shipment round', 'รอบขนส่ง', '发货单')}><ShipmentPick value={sid} onChange={setSid} /></Field>
         <Field label={t('Off-China date', 'วันที่ขึ้นตู้', '上车日期')}><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        {cur && <Field label={t('Transport', 'ส่งทาง', '运输方式')}><div><TransportBadge v={cur.transport} /></div></Field>}
       </Grid>
       {sid ? (
         <form onSubmit={scan} style={{ marginTop: 12 }}>
           <input ref={ref} className="scan" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('Scan box no., tracking no. or CTN, then Enter', 'สแกนเลขกระสอบ / เลขแทรค / เลข CTN แล้วกด Enter', '扫描包号 / 单号 / CTN')} />
         </form>
       ) : <p className="muted">{t('Choose a round first', 'เลือกรอบขนส่งก่อน แล้วสแกนเลขกระสอบ', '先选择发货单')}</p>}
-      {last && <p><Badge tone="good"><Check size={12} aria-hidden /> {last.packing_code}</Badge> {last.customer_code} · {last.weight} kg · CTN {last.ctn}/{last.no}</p>}
+      {last && <p><Badge tone="good"><Check size={12} aria-hidden /> {last.packing_code}</Badge> {last.customer_code} · {last.weight} kg · CTN {last.ctn}/{last.no}
+        {last.transport_mismatch && <> <Badge tone="warn"><AlertTriangle size={12} aria-hidden /> {t('This box was marked', 'กล่องนี้ระบุว่าส่งทาง', '此包标记为')} {last.transport === 'ship' ? t('ship', 'เรือ', '海运') : t('truck', 'รถ', '陆运')}</Badge></>}</p>}
       {sid && <>
         <h3><Bi>{`${t('On this round', 'ในรอบนี้', '本发货单')} · ${loaded.data?.length || 0} ${t('boxes', 'กระสอบ', '包')} · ${money(sum(loaded.data, 'weight'))} kg`}</Bi></h3>
         <Table rows={loaded.data} maxHeight={380} columns={[
@@ -440,7 +462,7 @@ export function ShipmentReport() {
   const plain = (s: string) => s.replace(/[ ⁠]/g, (c) => (c === ' ' ? ' ' : ''));
   const exportXlsx = () => downloadXlsx(`packing-list-${data.shipment.code}`, [
     { name: plain(t('Summary', 'สรุป', '汇总')), widths: [28, 12, 12, 12], rows: [
-      [`Packing list ${data.shipment.code}`, data.shipment.date],
+      [`Packing list ${data.shipment.code}`, data.shipment.date, data.shipment.transport === 'truck' ? 'รถ 陆运' : data.shipment.transport === 'ship' ? 'เรือ 海运' : ''],
       [],
       [plain(t('Category', 'ประเภทสินค้า', '产品分类')), plain(t('Sacks', 'กระสอบ', '包')), 'kg', 'm³'],
       ...summary.map((g) => [plain(g.cat), g.sacks, Math.round(g.weight * 100) / 100, Math.round(g.cbm * 10000) / 10000]),
@@ -461,7 +483,7 @@ export function ShipmentReport() {
       <button onClick={exportXlsx}><FileSpreadsheet size={16} aria-hidden /> {t('Export Excel', 'Export Excel', '导出 Excel')}</button>
       <button onClick={() => window.print()}><Printer size={16} aria-hidden /> {t('Print', 'ปริ้น', '打印')}</button></>}>
       <div className="card print-area doc">
-        <h2>Packing list {data.shipment.code} · {data.shipment.date}</h2>
+        <h2>Packing list {data.shipment.code} · {data.shipment.date}{data.shipment.transport === 'truck' ? ' · รถ 陆运' : data.shipment.transport === 'ship' ? ' · เรือ 海运' : ''}</h2>
         <h3>{t('Summary by category', 'สรุปตามประเภทสินค้า', '按产品分类汇总')}</h3>
         <table style={{ maxWidth: 640, marginBottom: 20 }}>
           <thead><tr><th>{t('Category', 'ประเภทสินค้า', '产品分类')}</th><th style={{ textAlign: 'right' }}>{t('Sacks', 'กระสอบ', '包')}</th><th style={{ textAlign: 'right' }}>kg</th><th style={{ textAlign: 'right' }}>m³</th></tr></thead>

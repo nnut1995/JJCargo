@@ -233,6 +233,7 @@ export function migrate() {
   addColumn('shipments', 'status_date', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS ix_orders_no ON orders(order_no)');
   addColumn('packings', 'transport', 'TEXT'); // truck | ship (how the box goes to Thailand)
+  addColumn('shipments', 'transport', 'TEXT'); // truck | ship (round goes by truck or by ship), chosen when the round is created
   addColumn('packings', 'reference_id', 'TEXT'); // yyyymmnnnn, separate from the PK box code
   addColumn('packings', 'parent_id', 'INTEGER REFERENCES packings(id)'); // small parcel inside a sack (กระสอบรวม); the sack goes on the round, parcels are charged
   db.exec('CREATE INDEX IF NOT EXISTS ix_packings_parent ON packings(parent_id) WHERE parent_id IS NOT NULL');
