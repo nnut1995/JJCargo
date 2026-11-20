@@ -12,6 +12,15 @@ function BoxCode({ r }: { r: any }) {
     {r.child_count > 0 && <> <Badge tone="info">{t(`Sack · ${r.child_count}`, `กระสอบ · ${r.child_count} ชิ้น`, `合并包 · ${r.child_count}`)}</Badge></>}
     {r.parent_code && <div className="muted">{t('in sack', 'อยู่ในกระสอบ', '在合并包')} {r.parent_code}</div>}</>;
 }
+/** "เสื้อผ้า ×50 · รองเท้า ×4" from the contents_json column of the box lists. */
+const contentsOf = (r: any): { th?: string; zh?: string; en?: string; q: number }[] => { try { return JSON.parse(r.contents_json || '[]'); } catch { return []; } };
+const contentsText = (r: any, lang: any) => contentsOf(r).map((c) => `${pick(c, lang)} ×${c.q}`).join(' · ');
+/** Same split as the server (splitStyles): 10 over 3 boxes -> "4, 3, 3". */
+const perBox = (q: number, n: number) => {
+  if (!(n > 1)) return String(q);
+  if (Number.isInteger(q)) { const b = Math.floor(q / n), r = q % n; return r ? `${b + 1} ×${r}, ${b} ×${n - r}` : String(b); }
+  const each = Math.floor((q / n) * 100) / 100; return `${Math.round((q - each * (n - 1)) * 100) / 100}, ${each} ×${n - 1}`;
+};
 const boxRef = (r: { order_nos?: string | null; tracking_no?: string | null; reference_id?: string | null }) => r.order_nos || r.tracking_no || r.reference_id || '';
 // How the box travels to Thailand (packings.transport)
 function TransportPick({ value, onChange, all }: { value: string | null | undefined; onChange: (v: string) => void; all?: boolean }) {
@@ -94,6 +103,12 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
   const now = new Date();
   // one note for the whole receipt: box remarks without the automatic "(i/n)" counter, each once
   const notes = [...new Set(packings.map((p) => String(p.remark || '').replace(/\s*\(\d+\/\d+\)$/, '').trim()).filter(Boolean))];
+  // contents of all the boxes added up per category (receive-without-bill shares one entry out between the boxes)
+  const contents = new Map<number, { th?: string; zh?: string; q: number }>();
+  for (const p of packings) for (const st of p.styles || []) {
+    const c = contents.get(st.style_id) || { th: st.style_th, zh: st.style_zh || st.style_en, q: 0 };
+    c.q = Math.round((c.q + Number(st.quantity)) * 100) / 100; contents.set(st.style_id, c);
+  }
   const transports = [...new Set(packings.map((p) => p.transport).filter((x) => x === 'truck' || x === 'ship'))] as string[];
   if (mixedRefs(packings)) return <div className="doc receipt"><p><b>{t('These boxes have different ref numbers: one goods receipt per ref.', 'กล่องที่เลือกมีเลข ref ต่างกัน ออกใบรับของรวมกันไม่ได้ (1 ใบต่อ 1 เลข ref)', '所选包裹的 ref 号不同，不能开同一张收货单')}</b></p>
     <p>{[...new Set(packings.map(refBase))].map((r) => r || '—').join(', ')}</p></div>;
@@ -116,6 +131,7 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
         <div><span>จำนวน 件数</span><b>{packings.length} <small>กล่อง 件</small></b></div>
         <div><span>ขนส่งทาง 运输方式</span><b>{transports.length ? transports.map((x) => x === 'truck' ? 'รถ 陆运' : 'เรือ 海运').join(' / ') : '—'}</b></div>
       </div>
+      {contents.size > 0 && <div className="rcpt-note"><span>สินค้า 产品</span>{[...contents.values()].map((c) => `${[c.th, c.zh].filter(Boolean).join(' ')} ×${c.q}`).join(' · ')}</div>}
       {notes.length > 0 && <div className="rcpt-note"><span>{t('Remark', 'หมายเหตุ', '备注')}</span>{notes.join(' · ')}</div>}
       <section className="rcpt-terms">
         <h3>หมายเหตุ 备注</h3>
@@ -190,13 +206,15 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
     setStyles([...styles, { ...newStyle, key: Math.random() }]);
     setNewStyle({ style_id: null, quantity: 1 });
   };
+  // a category picked but not yet added with the Add button still goes in (it used to be dropped silently)
+  const allStyles = newStyle.style_id && Number(newStyle.quantity) > 0 ? [...styles, newStyle] : styles;
   const save = async () => {
-    const r: any = await run(() => api('/packing', { body: { ...h, tracking_no: mode === 'nobill' ? h.tracking_no : '', items: mode === 'order' ? items : [], styles: styles.map((s) => ({ style_id: s.style_id, quantity: s.quantity })) } }),
+    const r: any = await run(() => api('/packing', { body: { ...h, tracking_no: mode === 'nobill' ? h.tracking_no : '', items: mode === 'order' ? items : [], styles: allStyles.map((s) => ({ style_id: s.style_id, quantity: s.quantity })) } }),
       t('Saved', 'บันทึกแล้ว', '已保存'));
     if (!r) return;
     setLast(r.packings);
     if (lookups.settings.print_after_pack === '1') setPrint({ packings: r.packings, start: mode === 'nobill' ? 'receipt' : 'labels' });
-    setItems([]); setStyles([]); setH({ ...blank, customer_id: h.customer_id, transport: h.transport });
+    setItems([]); setStyles([]); setNewStyle({ style_id: null, quantity: 1 }); setH({ ...blank, customer_id: h.customer_id, transport: h.transport });
     waiting.reload(); onSaved();
   };
   const styleName = (id: number) => { const s = lookups.styles.find((x) => x.id === id); return s ? pick(s, lang) : id; };
@@ -228,7 +246,8 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
           <Field label={t('Customer code', 'รหัสลูกค้า', '客户代码') + ' *'}><CustomerPick value={h.customer_id} onChange={(v) => setH({ ...h, customer_id: v })} placeholder={t('Customer code', 'รหัสลูกค้า', '客户代码')} autoFocus /></Field>
           {mode === 'order' && <Field label={t('…or find by order no.', 'หรือค้นจากเลขออเดอร์', '或订单号')}><input value={orderId} onChange={(e) => setOrderId(e.target.value)} /></Field>}
           {mode === 'nobill' && <Field label={t('Number of boxes', 'จำนวนกล่อง / กระสอบ', '包数')} hint={t('One label each', 'สร้างหลายกล่องพร้อมกัน ป้ายละ 1 ใบ', '每包一张标签')}><input type="number" min={1} value={h.boxes} onChange={(e) => setH({ ...h, boxes: e.target.value })} /></Field>}
-          {mode === 'nobill' && <Field label={t('Tracking no. (optional)', 'เลขแทรค (ไม่บังคับ)', '别的单号')}><input value={h.tracking_no} onChange={(e) => setH({ ...h, tracking_no: e.target.value })} /></Field>}
+          {mode === 'nobill' && <Field label={t('Tracking no. (optional)', 'เลขแทรค (ไม่บังคับ)', '别的单号')}
+            hint={Number(h.boxes) > 1 && h.tracking_no.trim() ? `${t('Saved as', 'จะบันทึกเป็น', '保存为')} ${h.tracking_no.trim()}-1 … ${h.tracking_no.trim()}-${h.boxes}` : undefined}><input value={h.tracking_no} onChange={(e) => setH({ ...h, tracking_no: e.target.value })} /></Field>}
           <Field label={t('Transport', 'ส่งทาง รถ / เรือ', '运输方式')}><TransportPick value={h.transport} onChange={(v) => setH({ ...h, transport: v })} /></Field>
           <Field label={t('Other customers (tracking only)', 'ลูกค้ารอง (ไว้ติดตาม ไม่คิดเงิน)', '其他客户（仅跟踪）')}><OtherCustomersPick value={h.other_customer_ids} main={h.customer_id} onChange={(v) => setH({ ...h, other_customer_ids: v })} /></Field>
           <Measure v={h} set={setH} />
@@ -272,12 +291,15 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
         <h3 style={{ marginTop: 16 }}><Bi>{t('Contents (optional)', 'สินค้าในกล่อง (ไม่บังคับ ใส่ทีหลังได้)', '产品')}</Bi></h3>
         <div className="row" style={{ marginBottom: 10 }}>
           <div style={{ minWidth: 260, flex: 1 }}><StylePick value={newStyle.style_id} onChange={(v) => setNewStyle({ ...newStyle, style_id: v })} /></div>
-          <input type="number" style={{ width: 100 }} value={newStyle.quantity} onChange={(e) => setNewStyle({ ...newStyle, quantity: e.target.value })} />
+          <input type="number" style={{ width: 100 }} value={newStyle.quantity} onChange={(e) => setNewStyle({ ...newStyle, quantity: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addStyle(); } }} aria-label={t('Qty', 'จำนวน', '数量')} />
           <button onClick={addStyle}><Plus size={16} aria-hidden /> {t('Add', 'เพิ่ม', '加')}</button>
         </div>
+        {Number(h.boxes) > 1 && allStyles.length > 0 && <p className="muted" style={{ marginTop: 0 }}>{t(`Quantities are shared out between the ${h.boxes} boxes.`, `จำนวนจะถูกเฉลี่ยไปทั้ง ${h.boxes} กล่อง`, `数量平均分到 ${h.boxes} 包`)}</p>}
         {styles.length > 0 && <Table rowKey="key" rows={styles} columns={[
           { key: 'style_id', label: t('Category', 'ประเภทสินค้า', '产品分类'), render: (r) => styleName(r.style_id) },
           { key: 'quantity', label: t('Qty', 'จำนวน', '数量'), align: 'right' },
+          ...(Number(h.boxes) > 1 ? [{ key: 'each', label: t('Per box', 'ต่อกล่อง', '每包'), align: 'right' as const, render: (r: any) => perBox(Number(r.quantity), Number(h.boxes)) }] : []),
           { key: 'x', label: '', render: (r) => <button className="link danger" onClick={() => setStyles(styles.filter((s) => s.key !== r.key))}><X size={16} aria-hidden /><span className="sr-only">Remove</span></button> },
         ]} />}
         </>}
@@ -458,6 +480,7 @@ type PackDialog = 'new' | 'nobill' | 'file';
 /** Packing list (main packing screen): every box with filters, plus dialogs to pack, receive without bill and pack from file. */
 export function PackingList() {
   const t = useT();
+  const { lang } = useLang();
   const transportText = useTransportText();
   const can = useCan();
   const [sp, setSp] = useSearchParams();
@@ -502,6 +525,7 @@ export function PackingList() {
           {cust && r.customer_id !== cust.id ? <Badge>{t('secondary', 'ลูกค้ารอง', '次要')} · {t('main', 'หลัก', '主')} {r.customer_code}</Badge> : <b>{r.customer_code}</b>}
           {r.other_customers && <div className="muted" style={{ fontSize: 12 }}>+ {r.other_customers}</div>}
         </> },
+        { key: 'contents', label: t('Contents', 'สินค้า', '产品'), render: (r) => <span className="clip">{contentsText(r, lang)}</span> },
         { key: 'transport', label: t('Transport', 'รถ/เรือ', '运输'), render: (r) => transportText(r.transport) },
         { key: 'ctn', label: 'CTN', render: (r) => r.ctn ? `${r.ctn}/${r.no ?? ''}` : '' },
         { key: 'weight', label: 'kg', align: 'right', sum: true, render: (r) => Number(r.weight) ? money(r.weight) : <Badge tone="warn">{t('not weighed', 'ยังไม่ชั่ง', '未称')}</Badge> },
