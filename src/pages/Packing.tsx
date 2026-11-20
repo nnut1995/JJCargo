@@ -42,6 +42,9 @@ function OtherCustomersPick({ value, main, onChange }: { value: number[] | undef
 }
 const useTransportText = () => { const t = useT(); return (v?: string | null) => v === 'truck' ? t('Truck', 'รถ', '陆运') : v === 'ship' ? t('Ship', 'เรือ', '海运') : ''; };
 const orderLabel = (r: { order_no?: string | null; order_id?: number }) => r.order_no || `#${r.order_id}`;
+/** One goods receipt = one running ref number; the -n suffix (boxes saved together) is ignored. */
+const refBase = (p: any) => String(p.reference_id || '').replace(/-\d+$/, '');
+export const mixedRefs = (packings: any[]) => new Set(packings.map(refBase)).size > 1;
 const cbmText = (p: any) => cbm({ cubic1: Number(p.cubic1), cubic2: Number(p.cubic2), cubic3: Number(p.cubic3) }).toFixed(4);
 
 export function LabelDoc({ packings }: { packings: any[] }) {
@@ -76,32 +79,56 @@ export function LabelDoc({ packings }: { packings: any[] }) {
   );
 }
 
+// Fixed terms + contacts printed at the bottom of every goods receipt (text from JJ Cargo, 2026-11-12)
+const RECEIPT_TERMS: [string, string][] = [
+  ['บริษัทไม่รับขนส่งสินค้าที่ผิดกฎหมาย หากพบสินค้าดังกล่าว ลูกค้าจะต้องได้รับโทษทางกฎหมาย', '如发现有违禁品，采购者和供货商需自己承担法律责任。'],
+  ['ทางบริษัทเพียงช่วยรับสินค้าให้ลูกค้าเท่านั้น ไม่สามารถรับผิดชอบค่าสินค้าให้ลูกค้าได้', '本公司只代客户收货，概不负责货款。'],
+];
+const RECEIPT_CONTACTS: [string, string][] = [['จีน 中国', '13533358790'], ['ไทย 泰国', '0624245141']];
+
 /** ใบรับของ — handed to the person who dropped the goods off. */
 export function ReceiptDoc({ packings }: { packings: any[] }) {
   const t = useT();
-  const { lang } = useLang();
   const { lookups } = useApp();
   const first = packings[0] || {};
   const now = new Date();
+  // one note for the whole receipt: box remarks without the automatic "(i/n)" counter, each once
+  const notes = [...new Set(packings.map((p) => String(p.remark || '').replace(/\s*\(\d+\/\d+\)$/, '').trim()).filter(Boolean))];
+  const transports = [...new Set(packings.map((p) => p.transport).filter((x) => x === 'truck' || x === 'ship'))] as string[];
+  if (mixedRefs(packings)) return <div className="doc receipt"><p><b>{t('These boxes have different ref numbers: one goods receipt per ref.', 'กล่องที่เลือกมีเลข ref ต่างกัน ออกใบรับของรวมกันไม่ได้ (1 ใบต่อ 1 เลข ref)', '所选包裹的 ref 号不同，不能开同一张收货单')}</b></p>
+    <p>{[...new Set(packings.map(refBase))].map((r) => r || '—').join(', ')}</p></div>;
   return (
-    <div className="doc receipt">
-      <div className="doc-head">
-        <div><h2>{lookups.settings.print_text} · {t('Goods receipt', 'ใบรับสินค้า', '收货单')}</h2>
-          <div>{t('Date', 'วันที่', '日期')}: {now.toLocaleDateString('en-CA')} {now.toTimeString().slice(0, 5)}</div></div>
-        <div style={{ textAlign: 'right' }}>{t('Customer', 'รหัสลูกค้า', '客户')}<div className="code" style={{ fontSize: 28, fontWeight: 700 }}>{first.customer_code}</div></div>
+    <div className="doc rcpt">
+      <header className="rcpt-head">
+        <div>
+          <div className="rcpt-brand">{lookups.settings.print_text}</div>
+          <div className="rcpt-title">ใบรับสินค้า <span>收货单</span></div>
+        </div>
+        <div className="rcpt-date">
+          <div>{t('Date', 'วันที่', '日期')}</div>
+          <b>{now.toLocaleDateString('en-CA')}</b>
+          <span>{now.toTimeString().slice(0, 5)}</span>
+        </div>
+      </header>
+      <div className="rcpt-facts">
+        <div><span>รหัสลูกค้า 客户</span><b>{first.customer_code || '—'}</b></div>
+        <div><span>เลข ref 单号</span><b>{refBase(first) || '—'}</b></div>
+        <div><span>จำนวน 件数</span><b>{packings.length} <small>กล่อง 件</small></b></div>
+        <div><span>ขนส่งทาง 运输方式</span><b>{transports.length ? transports.map((x) => x === 'truck' ? 'รถ 陆运' : 'เรือ 海运').join(' / ') : '—'}</b></div>
       </div>
-      <table>
-        <thead><tr><th>#</th><th>{t('Box', 'เลขกล่อง', '包号')}</th><th>{t('Contents', 'สินค้า', '产品')}</th><th>kg</th><th>{t('Remark', 'หมายเหตุ', '备注')}</th></tr></thead>
-        <tbody>{packings.map((p, i) => (
-          <tr key={p.id}><td>{i + 1}</td><td>{p.packing_code}</td>
-            <td>{[...(p.items || []).map((x: any) => `${orderLabel(x)} ×${x.quantity}`), ...(p.styles || []).map((s: any) => `${pick({ th: s.style_th, zh: s.style_zh, en: s.style_en }, lang)} ×${s.quantity}`)].join(', ')}</td>
-            <td>{p.weight || ''}</td><td>{p.remark || ''}{p.tracking_no ? ` · ${p.tracking_no}` : ''}</td></tr>
-        ))}</tbody>
-      </table>
-      <div className="total-line"><span>{t('Total boxes', 'รวมจำนวน', '总包数')}: <b>{packings.length}</b> {t('boxes', 'กล่อง', '包')}</span></div>
-      <div className="row" style={{ justifyContent: 'space-between', marginTop: 40 }}>
-        <span>{t('Sender', 'ผู้ส่ง', '送货人')} ____________________</span><span>{t('Received by', 'ผู้รับ', '收货人')} ____________________</span>
-      </div>
+      {notes.length > 0 && <div className="rcpt-note"><span>{t('Remark', 'หมายเหตุ', '备注')}</span>{notes.join(' · ')}</div>}
+      <section className="rcpt-terms">
+        <h3>หมายเหตุ 备注</h3>
+        <ol>{RECEIPT_TERMS.map(([th, zh]) => <li key={th}>{th}<span>{zh}</span></li>)}</ol>
+        <div className="rcpt-contacts">
+          <span>เบอร์ติดต่อ 联系方式</span>
+          {RECEIPT_CONTACTS.map(([where, tel]) => <span key={tel}>{where}: <b>{tel}</b></span>)}
+        </div>
+      </section>
+      <footer className="rcpt-sign">
+        <div><i />ผู้ส่ง 送货人</div>
+        <div><i />ผู้รับ 收货人</div>
+      </footer>
     </div>
   );
 }
@@ -450,7 +477,15 @@ export function PackingList() {
   const openDialog = (d: PackDialog | null) => setSp((p) => { const n = new URLSearchParams(p); if (d) n.set('open', d); else { n.delete('open'); n.delete('order'); } return n; }, { replace: !d });
   const closeDialog = () => openDialog(null);
   const canNew = can.menu('packing.new'), canNobill = can.menu('packing.nobill'), canFile = can.menu('packing.bulk'), canEdit = can.menu('packing.search');
-  const printSel = async (start: 'labels' | 'receipt') => setPrint({ packings: await Promise.all([...sel].map((id) => api(`/packing/${id}`))), start });
+  const toast = useToast();
+  const printSel = async (start: 'labels' | 'receipt') => {
+    const packings = await Promise.all([...sel].map((id) => api(`/packing/${id}`)));
+    if (start === 'receipt' && mixedRefs(packings)) {
+      toast(t('Selected boxes have different ref numbers: one goods receipt per ref.', 'กล่องที่เลือกมีเลข ref ต่างกัน ออกใบรับของรวมกันไม่ได้', '所选包裹的 ref 号不同，不能开同一张收货单'), 'err');
+      return;
+    }
+    setPrint({ packings, start });
+  };
   const set = (k: string, v: any) => { setQ({ ...q, [k]: v }); setSel(new Set()); };
   const boxesView = <>
       <div className="row" style={{ margin: '0 0 10px', alignItems: 'center' }}>

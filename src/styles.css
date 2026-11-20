@@ -380,6 +380,34 @@ details.more[open] > summary { margin-bottom: 14px; }
 .doc td, .doc th { border-color: #ccc; }
 .doc h2 { font-size: 1.2rem; margin-bottom: 6px; }
 .doc .doc-head { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
+.rcpt { max-width: 720px; margin: 0 auto; padding: 22px 26px; font-size: 13px; line-height: 1.45; }
+.rcpt-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; padding-bottom: 12px; border-bottom: 3px solid #000; }
+.rcpt-brand { font-size: 1.5rem; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1; }
+.rcpt-title { font-size: 1.05rem; font-weight: 600; margin-top: 2px; }
+.rcpt-title span { color: #555; font-weight: 500; margin-left: 4px; }
+.rcpt-date { text-align: right; font-variant-numeric: tabular-nums; }
+.rcpt-date div { font-size: 11px; color: #555; }
+.rcpt-date b { font-size: 1rem; display: block; }
+.rcpt-date span { color: #555; }
+.rcpt-facts { display: grid; grid-template-columns: 1fr 1.4fr 0.9fr 1.1fr; margin: 16px 0; border: 1.5px solid #000; border-radius: 6px; }
+.rcpt-facts > div { padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+.rcpt-facts > div + div { border-left: 1px solid #000; }
+.rcpt-facts span { font-size: 11px; color: #555; }
+.rcpt-facts b { font-size: 1.6rem; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; word-break: break-all; }
+.rcpt-facts small { font-size: 0.85rem; font-weight: 600; }
+.rcpt-note { margin: -4px 0 14px; padding: 8px 12px; background: #f4f4f4; border-radius: 4px; }
+.rcpt-note span { font-weight: 700; margin-right: 8px; }
+.rcpt-terms { border-top: 1px dashed #999; padding-top: 10px; font-size: 12px; }
+.rcpt-terms h3 { font-size: 12.5px; font-weight: 700; margin: 0 0 4px; }
+.rcpt-terms ol { margin: 0; padding-left: 18px; }
+.rcpt-terms li { margin-bottom: 4px; }
+.rcpt-terms li span { display: block; color: #555; }
+.rcpt-contacts { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 8px; padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; }
+.rcpt-contacts span:first-child { font-weight: 700; }
+.rcpt-contacts b { font-variant-numeric: tabular-nums; }
+.rcpt-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 44px; text-align: center; font-size: 12px; }
+.rcpt-sign i { display: block; border-bottom: 1px solid #000; height: 28px; margin-bottom: 4px; }
+@media (max-width: 560px) { .rcpt { padding: 14px 4px; } .rcpt-facts { grid-template-columns: 1fr 1fr; } .rcpt-facts > div:nth-child(3) { border-left: 0; } .rcpt-facts > div:nth-child(n+3) { border-top: 1px solid #000; } .rcpt-facts b { font-size: 1.3rem; } }
 .label-card { border: 2px solid #000; padding: 10px 12px; width: 380px; color: #000; background: #fff; margin: 0 auto 12px; page-break-after: always; }
 .label-card .code { font-size: 2.2rem; font-weight: 700; line-height: 1.1; }
 .label-card .meta { display: flex; justify-content: space-between; margin-top: 6px; flex-wrap: wrap; gap: 6px; }
