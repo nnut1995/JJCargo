@@ -533,7 +533,7 @@ export function PackingList() {
         { key: 'dims', label: 'cm', render: (r) => `${r.cubic1}×${r.cubic2}×${r.cubic3}` },
         { key: 'cbm', label: t('CBM', 'คิว', '立方'), align: 'right', sum: true, digits: 4, render: (r) => cbmText(r) },
         { key: 'created_at', label: t('Packed', 'แพคเมื่อ', '打包'), render: (r) => r.created_at?.slice(0, 16) },
-        { key: 'st', label: t('Status', 'สถานะ', '状态'), render: (r) => r.off_china_date ? <Badge tone="good">{t('On container', 'ขึ้นตู้แล้ว', '已发')} {r.off_china_date}</Badge> : <Badge>{t('Not shipped', 'ยังไม่ส่ง', '未发货')}</Badge> },
+        { key: 'st', label: t('Status', 'สถานะ', '状态'), render: (r) => r.off_china_date ? <span title={r.off_china_date}><Badge tone="good">{t('On container', 'ขึ้นตู้แล้ว', '已发')} {r.shipment_code || r.off_china_date}</Badge></span> : <Badge>{t('Not shipped', 'ยังไม่ส่ง', '未发货')}</Badge> },
         { key: 'x', label: '', render: (r) => <span onClick={(e) => e.stopPropagation()} className="row">
           <button className="link" onClick={async () => setPrint({ packings: [await api(`/packing/${r.id}`)], start: 'labels' })}><Printer size={16} aria-hidden /><span className="sr-only">Print</span></button>
           {canEdit && !r.off_china_date && <button className="link danger" onClick={async () => { if (await ask(t('Delete this box?', 'ต้องการลบกล่องนี้?', '你确定要删除吗?'), { danger: true }) && await run(() => api(`/packing/${r.id}`, { method: 'DELETE' }))) reload(); }}>{t('Delete', 'ลบ', '删除')}</button>}
