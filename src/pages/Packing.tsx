@@ -228,7 +228,8 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
           <Field label={t('Customer code', 'รหัสลูกค้า', '客户代码') + ' *'}><CustomerPick value={h.customer_id} onChange={(v) => setH({ ...h, customer_id: v })} placeholder={t('Customer code', 'รหัสลูกค้า', '客户代码')} autoFocus /></Field>
           {mode === 'order' && <Field label={t('…or find by order no.', 'หรือค้นจากเลขออเดอร์', '或订单号')}><input value={orderId} onChange={(e) => setOrderId(e.target.value)} /></Field>}
           {mode === 'nobill' && <Field label={t('Number of boxes', 'จำนวนกล่อง / กระสอบ', '包数')} hint={t('One label each', 'สร้างหลายกล่องพร้อมกัน ป้ายละ 1 ใบ', '每包一张标签')}><input type="number" min={1} value={h.boxes} onChange={(e) => setH({ ...h, boxes: e.target.value })} /></Field>}
-          {mode === 'nobill' && <Field label={t('Tracking no. (optional)', 'เลขแทรค (ไม่บังคับ)', '别的单号')}><input value={h.tracking_no} onChange={(e) => setH({ ...h, tracking_no: e.target.value })} /></Field>}
+          {mode === 'nobill' && <Field label={t('Tracking no. (optional)', 'เลขแทรค (ไม่บังคับ)', '别的单号')}
+            hint={Number(h.boxes) > 1 && h.tracking_no.trim() ? `${t('Saved as', 'จะบันทึกเป็น', '保存为')} ${h.tracking_no.trim()}-1 … ${h.tracking_no.trim()}-${h.boxes}` : undefined}><input value={h.tracking_no} onChange={(e) => setH({ ...h, tracking_no: e.target.value })} /></Field>}
           <Field label={t('Transport', 'ส่งทาง รถ / เรือ', '运输方式')}><TransportPick value={h.transport} onChange={(v) => setH({ ...h, transport: v })} /></Field>
           <Field label={t('Other customers (tracking only)', 'ลูกค้ารอง (ไว้ติดตาม ไม่คิดเงิน)', '其他客户（仅跟踪）')}><OtherCustomersPick value={h.other_customer_ids} main={h.customer_id} onChange={(v) => setH({ ...h, other_customer_ids: v })} /></Field>
           <Measure v={h} set={setH} />

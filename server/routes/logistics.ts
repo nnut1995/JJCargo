@@ -145,11 +145,13 @@ export function logisticsRouter() {
   r.post('/packing', needMenu('packing.new', 'packing.nobill'), (req, res) => {
     const b = req.body;
     const boxes = Math.max(1, Math.min(Number(b.boxes || 1), 200));
+    const tracking = String(b.tracking_no || '').trim() || null;
     const created = tx(() => {
       const out: { id: number; code: string }[] = [];
       const ref = boxes > 1 ? nextReferenceId() : undefined; // one receipt -> one running number with -1..-N
       for (let i = 0; i < boxes; i++) {
         out.push(insertPacking({ ...b, packing_code: boxes > 1 ? undefined : b.packing_code, reference_id: ref ? `${ref}-${i + 1}` : undefined,
+          tracking_no: tracking && boxes > 1 ? `${tracking}-${i + 1}` : tracking, // one tracking no. for N boxes -> TRACK-1..TRACK-N
           items: i === 0 ? b.items : [], styles: b.styles,
           remark: boxes > 1 ? `${b.remark || ''} (${i + 1}/${boxes})`.trim() : b.remark }, req.user.username));
       }

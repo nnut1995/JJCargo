@@ -90,6 +90,10 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   const base = Number(ref1.slice(6)) + 1;
   assert.deepEqual(nbRefs, [1, 2].map((i) => `${ym}${String(base).padStart(4, '0')}-${i}`));
   assert.equal((await call(`/packing/${nbRefs[1]}`)).id, nb.created[1].id);
+  // one tracking no. typed for several boxes -> each box gets TRACK-1, TRACK-2 … (scan on loading finds exactly one box)
+  const nbTracks = await Promise.all(nb.created.map(async (c: any) => (await call(`/packing/${c.id}`)).tracking_no));
+  assert.deepEqual(nbTracks, ['CH83207-1', 'CH83207-2']);
+  assert.equal((await call('/packing?tracking=CH83207')).filter((x: any) => nb.created.some((c: any) => c.id === x.id)).length, 2);
 
   log('demo feedback: receive first, weigh later; order numbers; overview per customer');
   await call('/r/banks', { body: { name: 'no currency chosen' }, expect: 400 });
