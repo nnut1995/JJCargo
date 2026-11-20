@@ -140,6 +140,11 @@ CREATE TABLE IF NOT EXISTS packing_styles (
   id INTEGER PRIMARY KEY, packing_id INTEGER NOT NULL REFERENCES packings(id) ON DELETE CASCADE,
   style_id INTEGER NOT NULL REFERENCES styles(id), quantity REAL NOT NULL
 );
+-- secondary customers on a box (for tracking only; shipping is charged to packings.customer_id)
+CREATE TABLE IF NOT EXISTS packing_customers (
+  packing_id INTEGER NOT NULL REFERENCES packings(id) ON DELETE CASCADE, customer_id INTEGER NOT NULL REFERENCES customers(id),
+  PRIMARY KEY (packing_id, customer_id)
+);
 CREATE TABLE IF NOT EXISTS shipment_other_amounts (
   id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers(id), shipment_id INTEGER NOT NULL REFERENCES shipments(id),
   detail TEXT, amount REAL NOT NULL, created_by TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -227,6 +232,9 @@ export function migrate() {
   addColumn('shipments', 'status', 'TEXT');
   addColumn('shipments', 'status_date', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS ix_orders_no ON orders(order_no)');
+  addColumn('packings', 'transport', 'TEXT'); // truck | ship (how the box goes to Thailand)
+  addColumn('packings', 'reference_id', 'TEXT'); // yyyymmnnnn, separate from the PK box code
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_packings_reference_id ON packings(reference_id) WHERE reference_id IS NOT NULL');
   if (!get('SELECT 1 FROM provinces LIMIT 1')) {
     PROVINCES.forEach((n, i) => run('INSERT INTO provinces (id, name) VALUES (?, ?)', [i + 1, n]));
   }

@@ -4,21 +4,39 @@ import { all, get, run, tx, audit } from '../db.js';
 import { HttpError, needMenu } from '../auth.js';
 import { SHIPMENT_STATUS_KEYS } from '../../shared/statuses.js';
 import {
-  addBalance, removeBalanceBySource, orderItemProgress, nextPackingCode, shipmentCustomerCharges, cubicMeters, round2, today,
+  addBalance, removeBalanceBySource, orderItemProgress, nextPackingCode, nextReferenceId, shipmentCustomerCharges, cubicMeters, round2, today,
   notifyStatus, type Currency,
 } from '../logic.js';
+
+const TRANSPORTS = ['truck', 'ship'];
+const transportOf = (v: any) => {
+  if (v == null || v === '') return null;
+  if (!TRANSPORTS.includes(v)) throw new HttpError(400, 'transport: truck | ship');
+  return v as string;
+};
 
 const PACKING_SELECT = `SELECT p.*, c.code AS customer_code, c.firstname, s.code AS shipment_code,
   (SELECT COUNT(*) FROM packing_items i WHERE i.packing_id = p.id) AS item_count,
   (SELECT COUNT(*) FROM packing_styles st WHERE st.packing_id = p.id) AS style_count,
   (SELECT GROUP_CONCAT(DISTINCT COALESCE(o.order_no, '#' || o.id)) FROM packing_items i JOIN order_items oi ON oi.id = i.order_item_id
-     JOIN orders o ON o.id = oi.order_id WHERE i.packing_id = p.id) AS order_nos
+     JOIN orders o ON o.id = oi.order_id WHERE i.packing_id = p.id) AS order_nos,
+  (SELECT GROUP_CONCAT(c2.code, ', ') FROM packing_customers pc JOIN customers c2 ON c2.id = pc.customer_id WHERE pc.packing_id = p.id) AS other_customers
   FROM packings p JOIN customers c ON c.id = p.customer_id LEFT JOIN shipments s ON s.id = p.shipment_id`;
 
+/** Replace a box's secondary customers (the main customer is never stored here). */
+function setOtherCustomers(packingId: number, mainCustomerId: number, ids: any) {
+  if (!Array.isArray(ids)) return;
+  run('DELETE FROM packing_customers WHERE packing_id = ?', [packingId]);
+  for (const cid of new Set(ids.map(Number).filter((x) => x > 0 && x !== Number(mainCustomerId)))) {
+    run('INSERT INTO packing_customers (packing_id, customer_id) VALUES (?, ?)', [packingId, cid]);
+  }
+}
+
 function packingDetail(id: number | string) {
-  const p = get<any>(`${PACKING_SELECT} WHERE p.id = ? OR p.packing_code = ?`, [id, id]);
+  const p = get<any>(`${PACKING_SELECT} WHERE p.id = ? OR p.packing_code = ? OR p.reference_id = ?`, [id, id, id]);
   if (!p) throw new HttpError(404, 'ไม่มีเลขกระสอบนี้ / 没有这个包号');
   p.cbm = cubicMeters(p);
+  p.other_customer_ids = all<{ customer_id: number }>('SELECT customer_id FROM packing_customers WHERE packing_id = ?', [p.id]).map((x) => x.customer_id);
   p.items = all(`SELECT pi.*, oi.order_id, o.order_no, oi.product_id, s.th AS style_th, s.zh AS style_zh, s.en AS style_en
     FROM packing_items pi JOIN order_items oi ON oi.id = pi.order_item_id JOIN orders o ON o.id = oi.order_id LEFT JOIN styles s ON s.id = oi.style_id WHERE pi.packing_id = ?`, [p.id]);
   p.styles = all(`SELECT ps.*, s.th AS style_th, s.zh AS style_zh, s.en AS style_en, u.description AS unit FROM packing_styles ps
@@ -44,9 +62,10 @@ function insertPacking(b: any, user: string) {
   }
   const code = b.packing_code || nextPackingCode();
   if (get('SELECT 1 FROM packings WHERE packing_code = ?', [code])) throw new HttpError(409, `${code} already exists`);
-  const { id } = run(`INSERT INTO packings (packing_code, shipment_id, ctn, no, customer_id, weight, cubic1, cubic2, cubic3, remark, tracking_no, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [code, b.shipment_id || null, b.ctn || null, b.no || null, b.customer_id, Number(b.weight || 0),
-    Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0), b.remark || null, b.tracking_no || null, user]);
+  const { id } = run(`INSERT INTO packings (packing_code, reference_id, shipment_id, ctn, no, customer_id, weight, cubic1, cubic2, cubic3, remark, tracking_no, transport, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [code, nextReferenceId(), b.shipment_id || null, b.ctn || null, b.no || null, b.customer_id, Number(b.weight || 0),
+    Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0), b.remark || null, b.tracking_no || null, transportOf(b.transport), user]);
+  setOtherCustomers(id, b.customer_id, b.other_customer_ids);
   for (const it of items) run('INSERT INTO packing_items (packing_id, order_item_id, quantity, tracking_no, created_by) VALUES (?,?,?,?,?)',
     [id, it.order_item_id, Number(it.quantity), it.tracking_no || null, user]);
   for (const s of styles) {
@@ -74,21 +93,29 @@ export function logisticsRouter() {
   });
   function packingFilter(q: any) {
     const w = ['1=1']; const p: any[] = [];
-    if (q.customer_id) { w.push('p.customer_id = ?'); p.push(q.customer_id); }
+    if (q.customer_id) { // main or secondary customer
+      w.push('(p.customer_id = ? OR EXISTS (SELECT 1 FROM packing_customers pc WHERE pc.packing_id = p.id AND pc.customer_id = ?))'); p.push(q.customer_id, q.customer_id);
+    }
     if (q.shipment_id) { w.push('p.shipment_id = ?'); p.push(q.shipment_id); }
     if (q.sent === '1') w.push('p.off_china_date IS NOT NULL');
     if (q.sent === '0') w.push('p.off_china_date IS NULL');
-    if (q.code) { w.push('p.packing_code LIKE ?'); p.push(`%${q.code}%`); }
+    if (q.code) { w.push('(p.packing_code LIKE ? OR p.reference_id LIKE ?)'); p.push(`%${q.code}%`, `%${q.code}%`); }
     if (q.tracking) { w.push('(p.tracking_no LIKE ? OR EXISTS (SELECT 1 FROM packing_items i WHERE i.packing_id = p.id AND i.tracking_no LIKE ?))'); p.push(`%${q.tracking}%`, `%${q.tracking}%`); }
     if (q.order_id) { w.push('EXISTS (SELECT 1 FROM packing_items i JOIN order_items oi ON oi.id = i.order_item_id JOIN orders o ON o.id = oi.order_id WHERE i.packing_id = p.id AND (CAST(oi.order_id AS TEXT) = ? OR o.order_no LIKE ?))'); p.push(q.order_id, `%${q.order_id}%`); }
+    if (q.ref) { // one search box: box code, tracking (box or item) or order no.
+      w.push(`(p.packing_code LIKE ? OR p.reference_id LIKE ? OR p.tracking_no LIKE ? OR EXISTS (SELECT 1 FROM packing_items i LEFT JOIN order_items oi ON oi.id = i.order_item_id LEFT JOIN orders o ON o.id = oi.order_id
+        WHERE i.packing_id = p.id AND (i.tracking_no LIKE ? OR o.order_no LIKE ? OR CAST(oi.order_id AS TEXT) = ?)))`);
+      const like = `%${String(q.ref).trim()}%`; p.push(like, like, like, like, like, String(q.ref).trim().replace(/^#/, ''));
+    }
+    if (q.transport) { if (q.transport === 'none') w.push('p.transport IS NULL'); else { w.push('p.transport = ?'); p.push(q.transport); } }
     if (q.unmeasured === '1') w.push('(COALESCE(p.weight,0) = 0 OR COALESCE(p.cubic1,0) * COALESCE(p.cubic2,0) * COALESCE(p.cubic3,0) = 0)');
     if (q.style_id) { w.push('EXISTS (SELECT 1 FROM packing_styles st WHERE st.packing_id = p.id AND st.style_id = ?)'); p.push(q.style_id); }
     return { where: w.join(' AND '), params: p };
   }
-  r.get('/packing', needMenu('packing.search', 'packing.offchina', 'packing.weigh'), (req, res) => {
+  r.get('/packing', needMenu('packing.search', 'packing.offchina', 'packing.weigh', 'packing.new', 'packing.nobill', 'packing.bulk'), (req, res) => {
     const f = packingFilter(req.query);
-    const rows = all<any>(`${PACKING_SELECT} WHERE ${f.where} ORDER BY p.id DESC LIMIT 2000`, f.params);
-    res.json(rows.map((x) => ({ ...x, cbm: round2(cubicMeters(x) * 1000) / 1000 })));
+    const rows = all<any>(`${PACKING_SELECT} WHERE ${f.where} ORDER BY p.id ${req.query.sort === 'old' ? 'ASC' : 'DESC'} LIMIT 2000`, f.params);
+    res.json(rows.map((x) => ({ ...x, cbm: Math.round(cubicMeters(x) * 10000) / 10000 })));
   });
   // one line per customer for the packing-list overview (click through to the boxes)
   r.get('/packing/by-customer', needMenu('packing.search'), (req, res) => {
@@ -101,7 +128,7 @@ export function logisticsRouter() {
            JOIN order_items oi ON oi.id = i.order_item_id JOIN orders o ON o.id = oi.order_id WHERE p2.customer_id = p.customer_id AND p2.id IN (
            SELECT p.id FROM packings p WHERE ${f.where})) AS order_nos
       FROM packings p JOIN customers c ON c.id = p.customer_id WHERE ${f.where} GROUP BY p.customer_id ORDER BY MAX(p.id) DESC LIMIT 2000`, [...f.params, ...f.params]);
-    res.json(rows.map((x) => ({ ...x, cbm: round2((x.cbm || 0) * 1000) / 1000 })));
+    res.json(rows.map((x) => ({ ...x, cbm: Math.round((x.cbm || 0) * 10000) / 10000 })));
   });
   r.get('/packing/:id', (req, res) => res.json(packingDetail(req.params.id)));
   r.post('/packing', needMenu('packing.new', 'packing.nobill'), (req, res) => {
@@ -146,11 +173,12 @@ export function logisticsRouter() {
       ['weight', 'cubic1', 'cubic2', 'cubic3', 'rate', 'rate_type', 'shipment_id'].some((k) => k in req.body && req.body[k] != p[k])) {
       throw new HttpError(409, 'สรุปยอดแล้ว — undo the shipping summary for this customer first');
     }
-    run(`UPDATE packings SET shipment_id=?, ctn=?, no=?, weight=?, cubic1=?, cubic2=?, cubic3=?, remark=?, tracking_no=?, rate_type=?, rate=?,
+    run(`UPDATE packings SET shipment_id=?, ctn=?, no=?, weight=?, cubic1=?, cubic2=?, cubic3=?, remark=?, tracking_no=?, transport=?, rate_type=?, rate=?,
       off_china_date=?, updated_by=?, updated_at=CURRENT_TIMESTAMP WHERE id = ?`,
       [b.shipment_id || null, b.ctn || null, b.no || null, Number(b.weight || 0), Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0),
-        b.remark || null, b.tracking_no || null, b.rate_type || null, b.rate === '' || b.rate == null ? null : Number(b.rate),
+        b.remark || null, b.tracking_no || null, transportOf(b.transport), b.rate_type || null, b.rate === '' || b.rate == null ? null : Number(b.rate),
         b.shipment_id ? b.off_china_date || null : null, req.user.username, p.id]);
+    if ('other_customer_ids' in req.body) setOtherCustomers(p.id, b.customer_id, req.body.other_customer_ids);
     audit(req.user.username, 'update', 'packings', p.id, req.body);
     res.json(packingDetail(p.id));
   });
@@ -221,8 +249,8 @@ export function logisticsRouter() {
     const styleId = req.body.style_id ? Number(req.body.style_id) : null;
     const result = tx(() => rows.filter((r) => r.customer_id).map((r) => {
       if (r.existing_id) {
-        run('UPDATE packings SET weight=?, cubic1=?, cubic2=?, cubic3=?, ctn=COALESCE(?,ctn), no=COALESCE(?,no), tracking_no=COALESCE(?,tracking_no), shipment_id=COALESCE(?,shipment_id) WHERE id = ?',
-          [r.weight, r.cubic1, r.cubic2, r.cubic3, r.ctn, r.no, r.tracking_no, req.body.shipment_id || null, r.existing_id]);
+        run('UPDATE packings SET weight=?, cubic1=?, cubic2=?, cubic3=?, ctn=COALESCE(?,ctn), no=COALESCE(?,no), tracking_no=COALESCE(?,tracking_no), transport=COALESCE(?,transport), shipment_id=COALESCE(?,shipment_id) WHERE id = ?',
+          [r.weight, r.cubic1, r.cubic2, r.cubic3, r.ctn, r.no, r.tracking_no, transportOf(req.body.transport), req.body.shipment_id || null, r.existing_id]);
         return { id: r.existing_id, code: r.packing_code };
       }
       const styles = styleId ? [{ style_id: styleId, quantity: 1 }] : [];
@@ -232,7 +260,7 @@ export function logisticsRouter() {
         if (!s) throw new HttpError(400, 'Create at least one product category first');
         styles.push({ style_id: s.id, quantity: 1 });
       }
-      return insertPacking({ ...r, shipment_id: req.body.shipment_id || null, styles }, req.user.username);
+      return insertPacking({ ...r, transport: req.body.transport, shipment_id: req.body.shipment_id || null, styles }, req.user.username);
     }));
     audit(req.user.username, 'import', 'packings', undefined, { count: result.length });
     res.json({ rows, created: result });
@@ -247,8 +275,16 @@ export function logisticsRouter() {
     const s = get<any>('SELECT * FROM shipments WHERE id = ?', [sid]);
     if (!s) throw new HttpError(404, 'Shipment not found');
     const code = String(req.body.code || '').trim();
-    const p = get<any>('SELECT * FROM packings WHERE packing_code = ? OR CAST(id AS TEXT) = ?', [code, code]);
-    if (!p) throw new HttpError(404, `找不到这个包号 / ${code} not found`);
+    // accepts the box code (PK…), a tracking no., or the CTN number of a box already on this round
+    let p = get<any>('SELECT * FROM packings WHERE packing_code = ? COLLATE NOCASE OR reference_id = ?', [code, code]);
+    if (!p) {
+      const byTracking = all<any>(`SELECT * FROM packings p WHERE p.tracking_no = ? OR EXISTS
+        (SELECT 1 FROM packing_items i WHERE i.packing_id = p.id AND i.tracking_no = ?)`, [code, code]);
+      if (byTracking.length > 1) throw new HttpError(409, `เลขแทรคนี้มีหลายกล่อง กรุณาสแกนเลขกล่อง / 这个单号有多个包: ${byTracking.map((x) => x.packing_code).join(', ')}`);
+      p = byTracking[0];
+    }
+    if (!p && /^\d+$/.test(code)) p = get<any>('SELECT * FROM packings WHERE shipment_id = ? AND ctn = ?', [sid, Number(code)]);
+    if (!p) throw new HttpError(404, `ไม่พบเลขกล่อง / 找不到这个包号: ${code}`);
     if (p.shipment_id && p.shipment_id !== sid && p.off_china_date) throw new HttpError(409, `${p.packing_code} is already loaded on another shipment`);
     const ctn = req.body.ctn ?? (get<any>('SELECT COALESCE(MAX(ctn),0) AS m FROM packings WHERE shipment_id = ?', [sid]).m + 1);
     const no = req.body.no ?? (get<any>('SELECT COUNT(*) AS n FROM packings WHERE shipment_id = ? AND customer_id = ?', [sid, p.customer_id]).n + (p.shipment_id === sid ? 0 : 1));
@@ -285,8 +321,10 @@ export function logisticsRouter() {
     res.json(all('SELECT * FROM shipment_status_log WHERE shipment_id = ? ORDER BY date DESC, id DESC', [req.params.id]));
   });
   r.post('/shipments/:id/arrived', needMenu('shipment.list'), (req, res) => {
-    run('UPDATE shipments SET arrived_date = ? WHERE id = ?', [req.body.date || today(), req.params.id]);
-    void notifyStatus('arrived', { shipment_id: Number(req.params.id) });
+    // the date may be in the future (expected arrival); empty clears it. Only notify once it has arrived.
+    const date = req.body.date === '' ? null : (req.body.date || today());
+    run('UPDATE shipments SET arrived_date = ? WHERE id = ?', [date, req.params.id]);
+    if (date && date <= today()) void notifyStatus('arrived', { shipment_id: Number(req.params.id) });
     res.json({ ok: true });
   });
   // Packing-list report by product category (ViewPackingListReport)

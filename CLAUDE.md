@@ -48,7 +48,7 @@ scripts/flow.ts        full business flow through the API with assertions (used 
 - Order / OrderDtl → `orders`, `order_items` (what the customer bought from a Chinese shop, prices in CNY)
 - Package / PackageDtl → `packages`, `package_items`: a **supplier bill** = goods received + money to transfer to the shop
 - PackageDtlsStatement → `package_item_statements` (deductions / refunds); PackagePayment → `package_payments`
-- ShipmentDtl → `packings` (one box/sack, code `PK0001`), ShipmentDtlsItem → `packing_items`, ShipmentDtlsStyle → `packing_styles`
+- ShipmentDtl → `packings` (one box/sack, unique box code `PK0001` = barcode; separate `reference_id` `yyyymmnnnn` e.g. `2026110001`, monthly running no.; `transport` truck|ship), ShipmentDtlsItem → `packing_items`, ShipmentDtlsStyle → `packing_styles`
 - Shipment → `shipments` (a round / container); ShipmentOtherAmount → `shipment_other_amounts`; posting → `shipment_summaries`
 - CustomerBalance / CustomerYuanBalance → `customer_balances` with `currency` THB|CNY (running balance computed, not stored)
 - PaymentInfo → `payment_infos` (customer "I transferred" notice; status 1 pending / 2 approved / 3 rejected)
@@ -85,6 +85,9 @@ scripts/flow.ts        full business flow through the API with assertions (used 
 - New screen: also give its menu key an icon in `ITEM_ICON` (src/nav.tsx). Detail pages pass `back="/list-path"` to `<Page>`.
 - A menu item with `navAs: '<key>'` keeps its own permission but has no sidebar entry; it lights up the `<key>` screen instead.
   Orders: `/orders` (`OrdersHub`) holds the order list and supplier bills as tabs with one search box; `/packages` and `/lookup` redirect there.
+  Packing: `/packing` (`PackingList`) is the box list with filters; *Pack & weigh*, *Receive without bill* and *Pack from file* open as dialogs
+  (`?open=new|nobill|file`, `&order=` prefills the order no.); `/packing/new`, `/packing/nobill`, `/packing/import` redirect there.
+  Shipments: `/shipments` lists rounds (filters, status, arrived, edit) with *New round* and *Load container* as dialogs (`?open=new|load&round=`); `/shipments/load` redirects there.
 
 ## Conventions
 - All route handlers are synchronous (node:sqlite is sync) and throw `HttpError(status, message)`; messages are bilingual where the user sees them.

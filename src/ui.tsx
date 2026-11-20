@@ -172,8 +172,8 @@ export function Empty({ children }: { children?: ReactNode }) {
   return <div className="empty"><Inbox size={22} aria-hidden /><div>{bi(children || t('No data', 'ไม่มีข้อมูล', '没有数据'))}</div></div>;
 }
 
-export function Modal({ open, title, onClose, children, wide, small, footer }: {
-  open: boolean; title: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean; small?: boolean; footer?: ReactNode;
+export function Modal({ open, title, onClose, children, wide, xl, small, footer }: {
+  open: boolean; title: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean; xl?: boolean; small?: boolean; footer?: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -201,7 +201,7 @@ export function Modal({ open, title, onClose, children, wide, small, footer }: {
   if (!open) return null;
   return (
     <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} tabIndex={-1} className={`modal${wide ? ' wide' : ''}${small ? ' small' : ''}`} role="dialog" aria-modal="true">
+      <div ref={ref} tabIndex={-1} className={`modal${wide ? ' wide' : ''}${xl ? ' xl' : ''}${small ? ' small' : ''}`} role="dialog" aria-modal="true">
         <div className="modal-head"><h2>{bi(title)}</h2><button className="icon" onClick={onClose} aria-label="Close"><X size={20} /></button></div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
@@ -228,6 +228,8 @@ export interface Col<T = any> {
   align?: 'right' | 'center';
   money?: boolean;
   sum?: boolean;
+  /** decimals for the sum row (default 2) */
+  digits?: number;
   width?: number | string;
 }
 export function Table<T = any>({ columns, rows, onRow, rowKey = 'id', selectable, selected, onSelect, empty, rowClass, maxHeight }: {
@@ -281,7 +283,7 @@ export function Table<T = any>({ columns, rows, onRow, rowKey = 'id', selectable
               {selectable && <td />}
               {columns.map((c, i) => (
                 <td key={c.key} className="num" style={{ textAlign: c.money || c.sum || c.align === 'right' ? 'right' : undefined }}>
-                  {c.sum ? money(list.reduce((s, r: any) => s + (Number(r[c.key]) || 0), 0)) : i === 0 ? <span className="muted">{t('Total', 'รวม', '合计')}</span> : ''}
+                  {c.sum ? money(list.reduce((s, r: any) => s + (Number(r[c.key]) || 0), 0), c.digits ?? 2) : i === 0 ? <span className="muted">{t('Total', 'รวม', '合计')}</span> : ''}
                 </td>
               ))}
             </tr>
@@ -338,7 +340,9 @@ export function Combo<T>({ items, value, onChange, getLabel, getId = (x: any) =>
   return (
     <div className="combo" ref={boxRef}>
       <input id={id} value={text} placeholder={placeholder} autoFocus={autoFocus} role="combobox" aria-expanded={open} autoComplete="off"
-        onFocus={(e) => { setOpen(true); e.target.select(); }}
+        // the list opens on click, typing or ↓, not on focus, so auto-focused pickers (dialogs) don't pop open by themselves
+        onFocus={(e) => e.target.select()}
+        onMouseDown={() => setOpen(true)}
         onBlur={() => setTimeout(() => { setOpen(false); if (!text && allowEmpty) choose(undefined); else setText(current ? getLabel(current) : ''); }, 150)}
         onChange={(e) => { setText(e.target.value); setOpen(true); setHi(0); }}
         onKeyDown={(e) => {
