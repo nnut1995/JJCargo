@@ -450,6 +450,9 @@ export function ShipmentReport() {
     groups.set(cat, g);
   }
   const summary = [...groups.values()].sort((a, b) => b.sacks - a.sacks);
+  // all sacks grouped by customer (one merged customer cell per group); order inside a group stays CTN / No
+  const sorted = data.boxes.map((b: any, i: number) => ({ b, i })).sort((x: any, y: any) => String(x.b.customer_code).localeCompare(String(y.b.customer_code)) || x.i - y.i).map((x: any) => x.b);
+  const span = (i: number) => { if (i > 0 && sorted[i - 1].customer_code === sorted[i].customer_code) return 0; let n = 1; while (sorted[i + n]?.customer_code === sorted[i].customer_code) n++; return n; };
   const plain = (s: string) => s.replace(/[ ⁠]/g, (c) => (c === ' ' ? ' ' : ''));
   const exportXlsx = () => downloadXlsx(`packing-list-${data.shipment.code}`, [
     { name: plain(t('Summary', 'สรุป', '汇总')), widths: [28, 12, 12, 12], rows: [
@@ -459,9 +462,10 @@ export function ShipmentReport() {
       ...summary.map((g) => [plain(g.cat), g.sacks, Math.round(g.weight * 100) / 100, Math.round(g.cbm * 10000) / 10000]),
       [plain(t('Total', 'รวม', '合计')), data.boxes.length, Math.round(sum(data.boxes, 'weight') * 100) / 100, Math.round(sum(data.boxes, 'cbm') * 10000) / 10000],
     ] },
-    { name: 'Packing list', widths: [7, 7, 14, 14, 10, 16, 10, 22, 40], rows: [
+    { name: 'Packing list', widths: [7, 7, 14, 14, 10, 16, 10, 22, 40],
+      merges: sorted.flatMap((_: any, i: number) => (span(i) > 1 ? [`D${i + 2}:D${i + 1 + span(i)}`] : [])), rows: [
       ['CTN', 'No', plain(t('Box', 'เลขกระสอบ', '包号')), plain(t('Customer', 'ลูกค้า', '客户')), 'kg', 'cm', 'm³', plain(t('Category', 'ประเภทสินค้า', '产品分类')), plain(t('Contents', 'สินค้า', '产品'))],
-      ...data.boxes.map((b: any) => [b.ctn, b.no, b.packing_code, b.customer_code, Number(b.weight) || 0, `${b.cubic1}×${b.cubic2}×${b.cubic3}`, Math.round(b.cbm * 10000) / 10000, plain(catOf(b)),
+      ...sorted.map((b: any, i: number) => [b.ctn, b.no, b.packing_code, span(i) ? b.customer_code : '', Number(b.weight) || 0, `${b.cubic1}×${b.cubic2}×${b.cubic3}`, Math.round(b.cbm * 10000) / 10000, plain(catOf(b)),
         plain(b.contents.map((c: any) => `${pick(c, lang) || '?'} ×${c.qty}`).join(', '))]),
     ] },
   ]);
@@ -482,8 +486,8 @@ export function ShipmentReport() {
         <h3>{t('All sacks', 'รายการกระสอบทั้งหมด', '全部包')}</h3>
         <table>
           <thead><tr><th>CTN</th><th>No</th><th>{t('Box', 'เลขกระสอบ', '包号')}</th><th>{t('Customer', 'ลูกค้า', '客户')}</th><th>kg</th><th>cm</th><th>m³</th><th>{t('Category', 'ประเภทสินค้า', '产品分类')}</th><th>{t('Contents', 'สินค้า', '产品')}</th></tr></thead>
-          <tbody>{data.boxes.map((b: any) => (
-            <tr key={b.id}><td>{b.ctn}</td><td>{b.no}</td><td>{b.packing_code}</td><td>{b.customer_code}</td><td>{b.weight}</td><td>{b.cubic1}×{b.cubic2}×{b.cubic3}</td><td>{b.cbm.toFixed(4)}</td>
+          <tbody>{sorted.map((b: any, i: number) => (
+            <tr key={b.id}><td>{b.ctn}</td><td>{b.no}</td><td>{b.packing_code}</td>{span(i) > 0 && <td rowSpan={span(i)} style={{ verticalAlign: 'middle', fontWeight: 600 }}>{b.customer_code}</td>}<td>{b.weight}</td><td>{b.cubic1}×{b.cubic2}×{b.cubic3}</td><td>{b.cbm.toFixed(4)}</td>
               <td>{catOf(b)}</td><td>{b.contents.map((c: any) => `${pick(c, lang) || '?'} ×${c.qty}`).join(', ')}</td></tr>
           ))}</tbody>
           <tfoot><tr><td colSpan={4}>{data.boxes.length} {t('boxes', 'กระสอบ', '包')}</td><td>{money(sum(data.boxes, 'weight'))}</td><td /><td>{sum(data.boxes, 'cbm').toFixed(4)}</td><td colSpan={2} /></tr></tfoot>
