@@ -2,9 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, pick, cbm, money } from '../lib';
 import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, StylePick, Badge, Modal, PrintModal, Barcode, Tabs, useAction, useAsk, useToast, Bi } from '../ui';
-import { Printer, ReceiptText, Plus, X, PackagePlus, PackageOpen, FileSpreadsheet, ArrowLeft } from 'lucide-react';
+import { Printer, ReceiptText, Plus, X, PackagePlus, PackageOpen, FileSpreadsheet, ArrowLeft, Combine, Ungroup } from 'lucide-react';
 
 // One reference per box for lists: order no. first, then tracking, then the reference id (yyyymmnnnn).
+/** Box code + sack info: a sack shows how many parcels it holds, a parcel shows which sack it is in. */
+function BoxCode({ r }: { r: any }) {
+  const t = useT();
+  return <><b>{r.packing_code}</b>
+    {r.child_count > 0 && <> <Badge tone="info">{t(`Sack · ${r.child_count}`, `กระสอบ · ${r.child_count} ชิ้น`, `合并包 · ${r.child_count}`)}</Badge></>}
+    {r.parent_code && <div className="muted">{t('in sack', 'อยู่ในกระสอบ', '在合并包')} {r.parent_code}</div>}</>;
+}
 const boxRef = (r: { order_nos?: string | null; tracking_no?: string | null; reference_id?: string | null }) => r.order_nos || r.tracking_no || r.reference_id || '';
 // How the box travels to Thailand (packings.transport)
 function TransportPick({ value, onChange, all }: { value: string | null | undefined; onChange: (v: string) => void; all?: boolean }) {
@@ -46,7 +53,7 @@ export function LabelDoc({ packings }: { packings: any[] }) {
       {packings.map((p) => (
         <div className="label-card" key={p.id}>
           <div className="row" style={{ justifyContent: 'space-between' }}><b>{text}</b><span>{p.shipment_code || ''}</span></div>
-          <div className="code">{p.customer_code}</div>
+          <div className="code">{p.customer_code}{p.children?.length && p.other_customers ? `, ${p.other_customers}` : ''}</div>
           <Barcode value={p.packing_code} />
           <div className="meta">
             <span>{p.weight ? `${p.weight} kg` : '— kg'}</span>
@@ -59,6 +66,7 @@ export function LabelDoc({ packings }: { packings: any[] }) {
             {[...(p.items || []).map((i: any) => `${orderLabel(i)} ${i.product_id || ''} ×${i.quantity}`),
               ...(p.styles || []).map((s: any) => `${pick({ th: s.style_th, zh: s.style_zh, en: s.style_en }, lang)} ×${s.quantity}`)].join(' · ')}
           </div>
+          {p.children?.length > 0 && <div style={{ fontSize: 12 }}>กระสอบรวม 合并包 ({p.children.length}): {p.children.map((c: any) => `${c.packing_code} ${c.customer_code}`).join(' · ')}</div>}
           {p.reference_id && <div style={{ fontSize: 12 }}>Ref: {p.reference_id}</div>}
           {p.tracking_no && <div style={{ fontSize: 12 }}>Track: {p.tracking_no}</div>}
           {p.remark && <div style={{ fontSize: 12 }}>{p.remark}</div>}
@@ -289,10 +297,32 @@ export function PackWeigh() {
   };
   const cell = (k: string) => (r: any) => <input data-m type="number" step="any" min={0} style={{ width: 90 }} value={r[k] || ''} onKeyDown={onKey} onChange={(e) => set(r.id, k, e.target.value)} />;
   const printSel = async () => setPrint(await Promise.all([...sel].map((id) => api(`/packing/${id}`))));
+  const { ask } = useAsk();
+  // กระสอบรวม: small parcels (any customers) go into one sack with its own label; tick a sack too to add to it
+  const picked = rows.filter((r) => sel.has(r.id));
+  const sacks = picked.filter((r) => r.child_count > 0);
+  const canSack = picked.length > 1 && sacks.length <= 1;
+  const merge = async () => {
+    const parcels = picked.filter((r) => !(r.child_count > 0)).map((r) => r.packing_code).join(', ');
+    const msg = sacks[0]
+      ? t(`Put ${parcels} into sack ${sacks[0].packing_code}?`, `ใส่ ${parcels} เข้ากระสอบ ${sacks[0].packing_code}?`, `把 ${parcels} 放进 ${sacks[0].packing_code}？`)
+      : t(`Put ${parcels} into a new sack? The parcels keep their codes and customers; weigh them after the split.`,
+        `รวม ${parcels} ใส่กระสอบใหม่? แต่ละชิ้นยังเก็บเลขกล่องและลูกค้าเดิมไว้ ชั่ง/คิดค่าส่งแต่ละชิ้นตอนแยกกระสอบ`,
+        `把 ${parcels} 放进新的合并包？每个包保留原包号和客户，拆包后再称重`);
+    if (!await ask(msg)) return;
+    const p: any = await run(() => api('/packing/merge', { body: { ids: picked.map((r) => r.id) } }), t('Done', 'รวมใส่กระสอบแล้ว', '已合并'));
+    if (!p) return;
+    setEdits((e) => { const n = { ...e }; picked.forEach((r) => { if (!(r.child_count > 0)) delete n[r.id]; }); return n; });
+    setSel(new Set()); reload();
+    setPrint([p]); // label for the sack
+  };
   return (
     <Page title={t('Weigh boxes later', 'ชั่งน้ำหนัก / วัดขนาดทีหลัง', '补录重量尺寸')}
       actions={<>
         <button disabled={!sel.size} onClick={printSel}><Printer size={16} aria-hidden /> {t('Print labels', 'ปริ้นป้าย', '打印')} ({sel.size})</button>
+        <button disabled={!canSack || busy} onClick={merge}
+          title={sacks.length > 1 ? t('Tick only one sack', 'ติ๊กกระสอบได้ใบเดียว', '只能选一个合并包') : undefined}>
+          <Combine size={16} aria-hidden /> {t('Put into one sack', 'รวมใส่กระสอบ', '合并成一个包')} ({sel.size})</button>
         <button className="primary" disabled={!dirty || busy} onClick={save}>{t('Save', 'บันทึก', '保存')} ({dirty})</button></>}>
       <Card>
         <Grid cols={4}>
@@ -313,12 +343,12 @@ export function PackWeigh() {
           ))}
           <button disabled={!sel.size || !bulkFields.length} onClick={applyBulk}>{t('Apply to ticked', 'ใส่ให้ที่ติ๊ก', '应用到已选')} ({sel.size})</button>
         </div>
-        <p className="muted" style={{ marginBottom: 0 }}>{t('Type the numbers and press Enter to move down, or tick boxes and fill them all at once above. Press Save once at the end.', 'พิมพ์ตัวเลขแล้วกด Enter เพื่อไปช่องถัดไป หรือติ๊กหลายกล่องแล้วใส่ค่าเดียวกันด้านบน เสร็จแล้วกดบันทึกครั้งเดียว', '输入后按 Enter 跳到下一格，或勾选后批量填写，最后保存')}</p>
+        <p className="muted" style={{ marginBottom: 0 }}>{t('Type the numbers and press Enter to move down, or tick boxes and fill them all at once above. Press Save once at the end. Small parcels: tick them and press "Put into one sack" (customers may differ), then weigh the sack. Parcels in a sack are weighed after the split.', 'พิมพ์ตัวเลขแล้วกด Enter เพื่อไปช่องถัดไป หรือติ๊กหลายกล่องแล้วใส่ค่าเดียวกันด้านบน เสร็จแล้วกดบันทึกครั้งเดียว พัสดุชิ้นเล็ก ติ๊กแล้วกด "รวมใส่กระสอบ" (คนละลูกค้าได้) แล้วชั่งกระสอบ ส่วนแต่ละชิ้นค่อยชั่งตอนแยกกระสอบ', '输入后按 Enter 跳到下一格，或勾选后批量填写，最后保存。小包可勾选后点“合并成一个包”（可不同客户），称合并包；拆包后再称每个小包')}</p>
       </Card>
       <Table rows={rows} selectable={() => true} selected={sel} onSelect={setSel} rowClass={(r) => (edits[r.id] ? 'on' : '')} columns={[
-        { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <b>{r.packing_code}</b> },
-        { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 参考号'), render: (r) => <span className="clip">{boxRef(r)}</span> },
-        { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
+        { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <BoxCode r={r} /> },
+        { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 参考号'), render: (r) => <b className="clip">{boxRef(r)}</b> },
+        { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户'), render: (r) => <b>{r.customer_code}</b> },
         { key: 'weight', label: 'kg', render: cell('weight') },
         { key: 'cubic1', label: t('W cm', 'กว้าง', '宽'), render: cell('cubic1') },
         { key: 'cubic2', label: t('L cm', 'ยาว', '长'), render: cell('cubic2') },
@@ -352,6 +382,28 @@ function PackingEditModal({ id, onClose, onSaved }: { id: number; onClose: () =>
         <Measure v={p} set={setData} />
         <Field label={t('Remark', 'หมายเหตุ', '备注')} wide><input value={p.remark ?? ''} onChange={(e) => setData({ ...p, remark: e.target.value })} /></Field>
       </Grid>
+      {p.parent_code && <p className="muted">{t('This parcel is in sack', 'ชิ้นนี้อยู่ในกระสอบ', '这个包在合并包')} <b>{p.parent_code}</b> — {t('round and loading follow the sack', 'รอบขนส่งและการขึ้นตู้ตามกระสอบ', '发货单和装柜跟随合并包')}</p>}
+      {p.children?.length > 0 && <>
+        <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3>{t('Parcels in this sack', 'พัสดุในกระสอบนี้', '合并包里的包')} ({p.children.length})</h3>
+          <button disabled={busy} onClick={async () => {
+            if (!await ask(t('Split the sack? Every parcel comes out (keeps the round) and the empty sack is deleted.', 'แยกกระสอบ? ทุกชิ้นจะออกจากกระสอบ (ยังอยู่รอบขนส่งเดิม) และลบกระสอบเปล่า', '拆包？所有小包取出（保留发货单），删除空的合并包'), { danger: true })) return;
+            if (await run(() => api(`/packing/${p.id}/split`, { body: {} }), t('Split', 'แยกกระสอบแล้ว', '已拆包'))) { onSaved(); onClose(); }
+          }}><Ungroup size={16} aria-hidden /> {t('Split sack', 'แยกกระสอบ', '拆包')}</button>
+        </div>
+        <Table rows={p.children} columns={[
+          { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <b>{r.packing_code}</b> },
+          { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户') },
+          { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 参考号'), render: (r) => <span className="clip">{boxRef(r)}</span> },
+          { key: 'weight', label: 'kg', align: 'right' },
+          { key: 'x', label: '', render: (r) => <button className="link" disabled={busy} onClick={async () => {
+            const res: any = await run(() => api(`/packing/${p.id}/split`, { body: { ids: [r.id] } }), t('Taken out', 'เอาออกจากกระสอบแล้ว', '已取出'));
+            if (!res) return;
+            onSaved();
+            if (res.deleted) onClose(); else reload();
+          }}>{t('Take out', 'เอาออก', '取出')}</button> },
+        ]} />
+      </>}
       <h3>{t('Items from orders', 'สินค้าจากออเดอร์', '订单产品')}</h3>
       <Table rows={p.items} columns={[
         { key: 'order_no', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (r) => orderLabel(r) },
@@ -409,7 +461,7 @@ export function PackingList() {
         <button disabled={!sel.size} onClick={() => printSel('receipt')}><ReceiptText size={16} aria-hidden /> {t('Goods receipt', 'ใบรับของ', '收货单')} ({sel.size})</button>
       </div>
       <Table rows={data} onRow={canEdit ? (r) => setEdit(r.id) : undefined} selectable={() => true} selected={sel} onSelect={setSel} columns={[
-        { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <b>{r.packing_code}</b> },
+        { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <BoxCode r={r} /> },
         { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 参考号'), render: (r) => <span className="clip">{boxRef(r)}</span> },
         { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户'), render: (r) => <>
           {cust && r.customer_id !== cust.id ? <Badge>{t('secondary', 'ลูกค้ารอง', '次要')} · {t('main', 'หลัก', '主')} {r.customer_code}</Badge> : <b>{r.customer_code}</b>}

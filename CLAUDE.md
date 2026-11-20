@@ -74,6 +74,9 @@ scripts/flow.ts        full business flow through the API with assertions (used 
 - `orders.order_no` = shop / platform order number typed by staff (unique when given). Show `order_no || '#'+id` everywhere an order is named.
 - Packing no longer needs weight, size or contents; boxes can be received first and measured later (`/packing/weigh`, `POST /api/packing/measure`).
 - An order line can be packed up to its **ordered** qty even before a supplier bill exists (bill = payment to the shop). "Not received yet" on orders = qty − max(billed, packed).
+- Sacks (กระสอบรวม): `packings.parent_id` puts small parcels (any customers) into a sack box (`POST /api/packing/merge`, `POST /api/packing/:id/split`).
+  The sack is weighed/loaded as one box; its parcels follow its round/loaded date (`syncChildren`), can't be loaded alone, and are what gets charged
+  (`shipmentCustomerCharges` skips sacks). Summary is blocked while a sacked parcel has no weight (weigh after the split).
 - Shipment rounds have a `status` (steps in `shared/statuses.ts`) with history in `shipment_status_log` (`POST /api/shipments/:id/status`).
 - Dashboard figures and rows link to the related screen (no separate quick-menu card).
 - Customer screen opens read-only (Edit button); shows THB, CNY and unpaid shipping (unpaid `shipment_summaries`) separately.
