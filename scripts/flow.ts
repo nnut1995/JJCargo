@@ -167,10 +167,22 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   assert.equal(imp.created.length, 1);
 
   log('shipment round, load container, summary, payment');
-  const ship = await call('/r/shipments', { body: { code: 'JJ-' + d.replace(/-/g, ''), date: d } });
+  // a round must say truck or ship
+  await call('/r/shipments', { body: { code: 'JJ-NOMODE', date: d }, expect: 400 });
+  await call('/r/shipments', { body: { code: 'JJ-PLANE', date: d, transport: 'plane' }, expect: 400 });
+  const ship = await call('/r/shipments', { body: { code: 'JJ-' + d.replace(/-/g, ''), date: d, transport: 'truck' } });
+  assert.ok((await call('/r/shipments?transport=truck')).some((s: any) => s.id === ship.id));
+  assert.ok(!(await call('/r/shipments?transport=ship')).some((s: any) => s.id === ship.id));
   for (const p of [pk1.created[0], ...nb.created, imp.created[0]]) await call(`/shipments/${ship.id}/load`, { body: { code: p.code, date: d } });
   const loaded = await call(`/shipments/${ship.id}/packings`);
   assert.equal(loaded.length, 4);
+  // boxes with no transport take the round's; a box marked for the other way is loaded but flagged
+  assert.ok(loaded.every((x: any) => x.transport === 'truck'));
+  const byShip = await call('/packing', { body: { customer_id: b.id, boxes: 1, transport: 'ship' } });
+  const flagged = await call(`/shipments/${ship.id}/load`, { body: { code: byShip.created[0].code, date: d } });
+  assert.equal(flagged.transport_mismatch, true);
+  assert.equal(flagged.transport, 'ship');
+  await call(`/shipments/${ship.id}/unload`, { body: { packing_id: byShip.created[0].id } });
   // the scan box also takes the CTN number of a box on this round, and a tracking no.
   const byCtn = await call(`/shipments/${ship.id}/load`, { body: { code: String(loaded[0].ctn), date: d } });
   assert.equal(byCtn.id, loaded[0].id);
@@ -194,7 +206,7 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   assert.equal((await call(`/shipments/${ship.id}/status`)).length, 2);
   assert.equal((await call('/r/shipments')).find((s: any) => s.id === ship.id).status, 'inspect_th');
   // a sack goes on a round as one box; its parcels follow, are not loadable alone, and must be weighed before the summary
-  const ship2 = await call('/r/shipments', { body: { code: 'JJ-SACK-' + d.replace(/-/g, ''), date: d } });
+  const ship2 = await call('/r/shipments', { body: { code: 'JJ-SACK-' + d.replace(/-/g, ''), date: d, transport: 'ship' } });
   const parcels = await call('/packing', { body: { customer_id: b.id, boxes: 2 } });
   const bag = await call('/packing/merge', { body: { ids: parcels.created.map((x: any) => x.id) } });
   await call(`/shipments/${ship2.id}/load`, { body: { code: parcels.created[0].code, date: d }, expect: 409 });

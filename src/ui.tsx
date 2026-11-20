@@ -389,7 +389,7 @@ export function ShipmentPick({ value, onChange, placeholder }: { value: any; onC
   return (
     <select value={value ?? ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}>
       <option value="">{placeholder || t('-- shipment round --', '--เลือกรอบขนส่ง--', '选择发货单')}</option>
-      {lookups.shipments.map((s) => <option key={s.id} value={s.id}>{s.code} · {s.date}</option>)}
+      {lookups.shipments.map((s) => <option key={s.id} value={s.id}>{s.code} · {s.date}{s.transport === 'truck' ? ` · ${t('Truck', 'รถ', '陆运')}` : s.transport === 'ship' ? ` · ${t('Ship', 'เรือ', '海运')}` : ''}</option>)}
     </select>
   );
 }
