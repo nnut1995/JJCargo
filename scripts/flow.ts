@@ -230,6 +230,14 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   assert.ok(grp.some((g: any) => g.sacks && g.boxes === 1) && grp.find((g: any) => g.customer_id === b.id).boxes === 2);
   assert.deepEqual((await call(`/packing?shipment_id=${ship2.id}&sacks=1`)).map((x: any) => x.id), [bag.id]);
   await call(`/shipments/${ship2.id}/summary/${b.id}`, { body: { currency: 'THB' }, expect: 409 });
+  // the sack is never billed: summary boxes / kg / charges count parcels only (sack weighed 40 kg here)
+  await call(`/packing/${bag.id}`, { method: 'PUT', body: { weight: 40, cubic1: 100, cubic2: 100, cubic3: 100 } });
+  const s2 = await call(`/shipments/${ship2.id}/summary`);
+  assert.equal(s2.length, 1);
+  assert.equal(s2[0].boxes, 2);
+  assert.equal(s2[0].weight || 0, 0);
+  assert.equal(s2[0].total, 0);
+  assert.equal((await call(`/shipping-charges?summarized=0`)).filter((x: any) => x.shipment_id === ship2.id).reduce((n: number, x: any) => n + x.boxes, 0), 2);
   await call(`/packing/${bag.id}/split`, { body: {} });
   const after = await call(`/packing/${parcels.created[0].id}`);
   assert.equal(after.shipment_id, ship2.id); // still on the round after the split
