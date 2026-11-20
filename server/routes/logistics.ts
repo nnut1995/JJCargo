@@ -153,17 +153,20 @@ export function logisticsRouter() {
   // one line per customer for the packing-list overview (click through to the boxes)
   r.get('/packing/by-customer', needMenu('packing.search'), (req, res) => {
     const f = packingFilter(req.query);
+    // filter the boxes once, then aggregate per customer (the old per-customer IN (...) re-ran the filter for every customer);
     // sacks are grouped on one line of their own (customer_id 0) instead of under their first parcel's customer
-    const rows = all<any>(`SELECT CASE WHEN ${NOT_SACK} THEN p.customer_id ELSE 0 END AS gid, MAX(p.customer_id) AS customer_id,
+    const rows = all<any>(`WITH f AS MATERIALIZED (SELECT p.* FROM packings p WHERE ${f.where}),
+      nos AS (SELECT f.customer_id, GROUP_CONCAT(DISTINCT COALESCE(o.order_no, '#' || o.id)) AS order_nos FROM f
+        JOIN packing_items i ON i.packing_id = f.id JOIN order_items oi ON oi.id = i.order_item_id JOIN orders o ON o.id = oi.order_id GROUP BY f.customer_id)
+      SELECT CASE WHEN ${NOT_SACK} THEN p.customer_id ELSE 0 END AS gid,
         CASE WHEN ${NOT_SACK} THEN c.code ELSE '${SACK_LABEL}' END AS customer_code, COUNT(*) AS boxes,
         SUM(CASE WHEN p.off_china_date IS NULL THEN 1 ELSE 0 END) AS not_sent,
         SUM(CASE WHEN COALESCE(p.weight,0) = 0 THEN 1 ELSE 0 END) AS unweighed,
         ROUND(SUM(p.weight), 2) AS weight, SUM(p.cubic1 * p.cubic2 * p.cubic3) / 1000000.0 AS cbm, MAX(p.created_at) AS last_packed,
-        (SELECT GROUP_CONCAT(DISTINCT COALESCE(o.order_no, '#' || o.id)) FROM packings p2 JOIN packing_items i ON i.packing_id = p2.id
-           JOIN order_items oi ON oi.id = i.order_item_id JOIN orders o ON o.id = oi.order_id WHERE p2.customer_id = p.customer_id AND p2.id IN (
-           SELECT p.id FROM packings p WHERE ${f.where})) AS order_nos
-      FROM packings p JOIN customers c ON c.id = p.customer_id WHERE ${f.where} GROUP BY gid ORDER BY MAX(p.id) DESC LIMIT 2000`, [...f.params, ...f.params]);
-    res.json(rows.map(({ gid, ...x }) => ({ ...x, customer_id: gid, sacks: gid === 0, order_nos: gid === 0 ? null : x.order_nos, cbm: Math.round((x.cbm || 0) * 10000) / 10000 })));
+        MAX(nos.order_nos) AS order_nos
+      FROM f p JOIN customers c ON c.id = p.customer_id LEFT JOIN nos ON nos.customer_id = p.customer_id
+      GROUP BY gid ORDER BY MAX(p.id) DESC LIMIT 2000`, f.params);
+    res.json(rows.map(({ gid, ...x }) => ({ ...x, customer_id: gid, sacks: gid === 0, order_nos: gid === 0 ? null : x.order_nos, cbm: round2((x.cbm || 0) * 1000) / 1000 })));
   });
   r.get('/packing/:id', (req, res) => res.json(packingDetail(req.params.id)));
   r.post('/packing', needMenu('packing.new', 'packing.nobill'), (req, res) => {
