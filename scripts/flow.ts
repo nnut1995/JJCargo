@@ -212,6 +212,14 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   await call(`/shipments/${ship2.id}/load`, { body: { code: parcels.created[0].code, date: d }, expect: 409 });
   await call(`/shipments/${ship2.id}/load`, { body: { code: bag.packing_code, date: d } });
   assert.ok((await call(`/packing/${parcels.created[1].id}`)).off_china_date);
+  // the sack has no customer of its own; the round's report / loading list show the sack only, never its parcels
+  assert.equal(bag.customer_code, 'กระสอบรวม 合并包');
+  const rep = await call(`/shipments/${ship2.id}/report`);
+  assert.deepEqual(rep.boxes.map((x: any) => x.id), [bag.id]);
+  assert.deepEqual((await call(`/shipments/${ship2.id}/packings`)).map((x: any) => x.id), [bag.id]);
+  const grp = await call(`/packing/by-customer?shipment_id=${ship2.id}&sent=`);
+  assert.ok(grp.some((g: any) => g.sacks && g.boxes === 1) && grp.find((g: any) => g.customer_id === b.id).boxes === 2);
+  assert.deepEqual((await call(`/packing?shipment_id=${ship2.id}&sacks=1`)).map((x: any) => x.id), [bag.id]);
   await call(`/shipments/${ship2.id}/summary/${b.id}`, { body: { currency: 'THB' }, expect: 409 });
   await call(`/packing/${bag.id}/split`, { body: {} });
   const after = await call(`/packing/${parcels.created[0].id}`);

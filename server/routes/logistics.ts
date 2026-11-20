@@ -15,7 +15,14 @@ const transportOf = (v: any) => {
   return v as string;
 };
 
-const PACKING_SELECT = `SELECT p.*, c.code AS customer_code, c.firstname, s.code AS shipment_code,
+/** Label shown instead of a customer on a sack (กระสอบรวม): the sack belongs to nobody, its parcels keep their customers. */
+export const SACK_LABEL = 'กระสอบรวม 合并包';
+/** SQL: box p is not a sack (has no parcels inside). */
+const NOT_SACK = 'NOT EXISTS (SELECT 1 FROM packings ch WHERE ch.parent_id = p.id)';
+
+// customer_code of a sack is SACK_LABEL; the stored customer_id (first parcel's customer) is internal only
+const PACKING_SELECT = `SELECT p.*, CASE WHEN EXISTS (SELECT 1 FROM packings ch WHERE ch.parent_id = p.id) THEN '${SACK_LABEL}' ELSE c.code END AS customer_code,
+  c.firstname, s.code AS shipment_code,
   (SELECT COUNT(*) FROM packing_items i WHERE i.packing_id = p.id) AS item_count,
   (SELECT COUNT(*) FROM packing_styles st WHERE st.packing_id = p.id) AS style_count,
   (SELECT json_group_array(json_object('th', s2.th, 'zh', s2.zh, 'en', s2.en, 'q', st.quantity)) FROM packing_styles st JOIN styles s2 ON s2.id = st.style_id
@@ -117,6 +124,7 @@ export function logisticsRouter() {
   });
   function packingFilter(q: any) {
     const w = ['1=1']; const p: any[] = [];
+    if (q.sacks === '1') w.push(NOT_SACK.replace(/^NOT /, ''));
     if (q.customer_id) { // main or secondary customer
       w.push('(p.customer_id = ? OR EXISTS (SELECT 1 FROM packing_customers pc WHERE pc.packing_id = p.id AND pc.customer_id = ?))'); p.push(q.customer_id, q.customer_id);
     }
@@ -145,15 +153,17 @@ export function logisticsRouter() {
   // one line per customer for the packing-list overview (click through to the boxes)
   r.get('/packing/by-customer', needMenu('packing.search'), (req, res) => {
     const f = packingFilter(req.query);
-    const rows = all<any>(`SELECT p.customer_id, c.code AS customer_code, COUNT(*) AS boxes,
+    // sacks are grouped on one line of their own (customer_id 0) instead of under their first parcel's customer
+    const rows = all<any>(`SELECT CASE WHEN ${NOT_SACK} THEN p.customer_id ELSE 0 END AS gid, MAX(p.customer_id) AS customer_id,
+        CASE WHEN ${NOT_SACK} THEN c.code ELSE '${SACK_LABEL}' END AS customer_code, COUNT(*) AS boxes,
         SUM(CASE WHEN p.off_china_date IS NULL THEN 1 ELSE 0 END) AS not_sent,
         SUM(CASE WHEN COALESCE(p.weight,0) = 0 THEN 1 ELSE 0 END) AS unweighed,
         ROUND(SUM(p.weight), 2) AS weight, SUM(p.cubic1 * p.cubic2 * p.cubic3) / 1000000.0 AS cbm, MAX(p.created_at) AS last_packed,
         (SELECT GROUP_CONCAT(DISTINCT COALESCE(o.order_no, '#' || o.id)) FROM packings p2 JOIN packing_items i ON i.packing_id = p2.id
            JOIN order_items oi ON oi.id = i.order_item_id JOIN orders o ON o.id = oi.order_id WHERE p2.customer_id = p.customer_id AND p2.id IN (
            SELECT p.id FROM packings p WHERE ${f.where})) AS order_nos
-      FROM packings p JOIN customers c ON c.id = p.customer_id WHERE ${f.where} GROUP BY p.customer_id ORDER BY MAX(p.id) DESC LIMIT 2000`, [...f.params, ...f.params]);
-    res.json(rows.map((x) => ({ ...x, cbm: Math.round((x.cbm || 0) * 10000) / 10000 })));
+      FROM packings p JOIN customers c ON c.id = p.customer_id WHERE ${f.where} GROUP BY gid ORDER BY MAX(p.id) DESC LIMIT 2000`, [...f.params, ...f.params]);
+    res.json(rows.map(({ gid, ...x }) => ({ ...x, customer_id: gid, sacks: gid === 0, order_nos: gid === 0 ? null : x.order_nos, cbm: Math.round((x.cbm || 0) * 10000) / 10000 })));
   });
   r.get('/packing/:id', (req, res) => res.json(packingDetail(req.params.id)));
   r.post('/packing', needMenu('packing.new', 'packing.nobill'), (req, res) => {
@@ -219,7 +229,7 @@ export function logisticsRouter() {
       let sack = sacks[0];
       if (!sack) {
         const { id } = insertPacking({ customer_id: parcels[0].customer_id, shipment_id: rounds[0] || null,
-          transport: parcels.find((b) => b.transport)?.transport || null, remark: 'กระสอบรวม' }, req.user.username);
+          transport: parcels.find((b) => b.transport)?.transport || null }, req.user.username);
         sack = get<any>('SELECT * FROM packings WHERE id = ?', [id]);
       }
       for (const b of parcels) run('UPDATE packings SET parent_id = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [sack.id, req.user.username, b.id]);
@@ -360,7 +370,7 @@ export function logisticsRouter() {
 
   // ================= Shipments: load boxes on a container (OffChinaFrom)
   r.get('/shipments/:id/packings', needMenu('packing.offchina', 'shipment.list', 'shipment.summary'), (req, res) => {
-    res.json(all(`${PACKING_SELECT} WHERE p.shipment_id = ? ORDER BY p.ctn, p.no, p.id`, [req.params.id]));
+    res.json(all(`${PACKING_SELECT} WHERE p.shipment_id = ? AND p.parent_id IS NULL ORDER BY p.ctn, p.no, p.id`, [req.params.id]));
   });
   r.post('/shipments/:id/load', needMenu('packing.offchina'), (req, res) => {
     const sid = Number(req.params.id);
@@ -432,11 +442,14 @@ export function logisticsRouter() {
   r.get('/shipments/:id/report', needMenu('shipment.list', 'packing.search'), (req, res) => {
     const s = get<any>('SELECT * FROM shipments WHERE id = ?', [req.params.id]);
     if (!s) throw new HttpError(404, 'Not found');
-    const boxes = all<any>(`${PACKING_SELECT} WHERE p.shipment_id = ? ORDER BY p.ctn, p.no, p.id`, [s.id]).map((p) => ({
+    // parcels inside a sack are hidden: the report lists what is on the container, a sack shows its parcels' contents
+    const boxes = all<any>(`${PACKING_SELECT} WHERE p.shipment_id = ? AND p.parent_id IS NULL ORDER BY p.ctn, p.no, p.id`, [s.id]).map((p) => ({
       ...p, cbm: cubicMeters(p),
       contents: all<any>(`SELECT s.zh, s.th, s.en, SUM(q) AS qty FROM (
-          SELECT oi.style_id AS sid, pi.quantity AS q FROM packing_items pi JOIN order_items oi ON oi.id = pi.order_item_id WHERE pi.packing_id = ?
-          UNION ALL SELECT style_id, quantity FROM packing_styles WHERE packing_id = ?) x LEFT JOIN styles s ON s.id = x.sid GROUP BY x.sid`, [p.id, p.id]),
+          SELECT oi.style_id AS sid, pi.quantity AS q FROM packing_items pi JOIN order_items oi ON oi.id = pi.order_item_id
+            JOIN packings b ON b.id = pi.packing_id WHERE b.id = ? OR b.parent_id = ?
+          UNION ALL SELECT ps.style_id, ps.quantity FROM packing_styles ps JOIN packings b ON b.id = ps.packing_id WHERE b.id = ? OR b.parent_id = ?) x
+        LEFT JOIN styles s ON s.id = x.sid GROUP BY x.sid`, [p.id, p.id, p.id, p.id]),
     }));
     res.json({ shipment: s, boxes });
   });
@@ -446,7 +459,7 @@ export function logisticsRouter() {
     const sid = Number(req.params.id);
     const currency = (req.query.currency === 'CNY' ? 'CNY' : 'THB') as Currency;
     const customers = all<any>(`SELECT c.id, c.code, c.firstname, c.nickname, COUNT(p.id) AS boxes, ROUND(SUM(p.weight),2) AS weight
-      FROM packings p JOIN customers c ON c.id = p.customer_id WHERE p.shipment_id = ? GROUP BY c.id ORDER BY c.code`, [sid]);
+      FROM packings p JOIN customers c ON c.id = p.customer_id WHERE p.shipment_id = ? AND ${NOT_SACK} GROUP BY c.id ORDER BY c.code`, [sid]);
     res.json(customers.map((c) => {
       const summary = get<any>('SELECT * FROM shipment_summaries WHERE shipment_id = ? AND customer_id = ?', [sid, c.id]);
       const ch = shipmentCustomerCharges(sid, c.id, (summary?.currency || currency) as Currency);
@@ -535,12 +548,12 @@ export function logisticsRouter() {
     if (req.query.to) { w.push('s.date <= ?'); p.push(req.query.to); }
     if (req.query.paid === '0' || req.query.paid === '1') { w.push('ss.paid = ?'); p.push(Number(req.query.paid)); }
     const summarized = all<any>(`SELECT ss.*, s.code AS shipment_code, s.date AS shipment_date, c.code AS customer_code,
-        (SELECT COUNT(*) FROM packings x WHERE x.shipment_id = ss.shipment_id AND x.customer_id = ss.customer_id) AS boxes
+        (SELECT COUNT(*) FROM packings p WHERE p.shipment_id = ss.shipment_id AND p.customer_id = ss.customer_id AND ${NOT_SACK}) AS boxes
       FROM shipment_summaries ss JOIN shipments s ON s.id = ss.shipment_id JOIN customers c ON c.id = ss.customer_id
       WHERE ${w.join(' AND ')} ORDER BY s.date DESC, c.code`, p);
     let pending: any[] = [];
     if (req.query.summarized !== '1') {
-      const w2 = ['p.shipment_id IS NOT NULL', 'NOT EXISTS (SELECT 1 FROM shipment_summaries ss WHERE ss.shipment_id = p.shipment_id AND ss.customer_id = p.customer_id)'];
+      const w2 = ['p.shipment_id IS NOT NULL', NOT_SACK, 'NOT EXISTS (SELECT 1 FROM shipment_summaries ss WHERE ss.shipment_id = p.shipment_id AND ss.customer_id = p.customer_id)'];
       const p2: any[] = [];
       if (req.query.customer_id) { w2.push('p.customer_id = ?'); p2.push(req.query.customer_id); }
       if (req.query.from) { w2.push('s.date >= ?'); p2.push(req.query.from); }

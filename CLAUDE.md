@@ -77,6 +77,9 @@ scripts/flow.ts        full business flow through the API with assertions (used 
 - Sacks (กระสอบรวม): `packings.parent_id` puts small parcels (any customers) into a sack box (`POST /api/packing/merge`, `POST /api/packing/:id/split`).
   The sack is weighed/loaded as one box; its parcels follow its round/loaded date (`syncChildren`), can't be loaded alone, and are what gets charged
   (`shipmentCustomerCharges` skips sacks). Summary is blocked while a sacked parcel has no weight (weigh after the split).
+  A sack has no customer of its own: `customer_id` (first parcel's customer, NOT NULL) is internal only, `PACKING_SELECT` returns
+  `customer_code = SACK_LABEL` ("กระสอบรวม 合并包"), the packing overview groups sacks on one line (`sacks=1` filter), and the round's
+  report / loading list (`/shipments/:id/report`, `/packings`) show only top-level boxes (parcels hidden; a sack lists its parcels' contents).
 - Shipment rounds have a `status` (steps in `shared/statuses.ts`) with history in `shipment_status_log` (`POST /api/shipments/:id/status`).
 - Dashboard figures and rows link to the related screen (no separate quick-menu card).
 - Customer screen opens read-only (Edit button); shows THB, CNY and unpaid shipping (unpaid `shipment_summaries`) separately.

@@ -65,7 +65,7 @@ export function LabelDoc({ packings }: { packings: any[] }) {
       {packings.map((p) => (
         <div className="label-card" key={p.id}>
           <div className="row" style={{ justifyContent: 'space-between' }}><b>{text}</b><span>{p.shipment_code || ''}</span></div>
-          <div className="code">{p.customer_code}{p.children?.length && p.other_customers ? `, ${p.other_customers}` : ''}</div>
+          <div className="code">{p.customer_code}</div>
           <Barcode value={p.packing_code} />
           <div className="meta">
             <span>{p.weight ? `${p.weight} kg` : '— kg'}</span>
@@ -78,7 +78,7 @@ export function LabelDoc({ packings }: { packings: any[] }) {
             {[...(p.items || []).map((i: any) => `${orderLabel(i)} ${i.product_id || ''} ×${i.quantity}`),
               ...(p.styles || []).map((s: any) => `${pick({ th: s.style_th, zh: s.style_zh, en: s.style_en }, lang)} ×${s.quantity}`)].join(' · ')}
           </div>
-          {p.children?.length > 0 && <div style={{ fontSize: 12 }}>กระสอบรวม 合并包 ({p.children.length}): {p.children.map((c: any) => `${c.packing_code} ${c.customer_code}`).join(' · ')}</div>}
+          {p.children?.length > 0 && <div style={{ fontSize: 12 }}>{p.children.length} ชิ้น 件: {p.children.map((c: any) => c.packing_code).join(' · ')}</div>}
           {p.reference_id && <div style={{ fontSize: 12 }}>Ref: {p.reference_id}</div>}
           {p.tracking_no && <div style={{ fontSize: 12 }}>Track: {p.tracking_no}</div>}
           {p.remark && <div style={{ fontSize: 12 }}>{p.remark}</div>}
@@ -355,9 +355,9 @@ export function PackWeigh() {
     const parcels = picked.filter((r) => !(r.child_count > 0)).map((r) => r.packing_code).join(', ');
     const msg = sacks[0]
       ? t(`Put ${parcels} into sack ${sacks[0].packing_code}?`, `ใส่ ${parcels} เข้ากระสอบ ${sacks[0].packing_code}?`, `把 ${parcels} 放进 ${sacks[0].packing_code}？`)
-      : t(`Put ${parcels} into a new sack? The parcels keep their codes and customers; weigh them after the split.`,
-        `รวม ${parcels} ใส่กระสอบใหม่? แต่ละชิ้นยังเก็บเลขกล่องและลูกค้าเดิมไว้ ชั่ง/คิดค่าส่งแต่ละชิ้นตอนแยกกระสอบ`,
-        `把 ${parcels} 放进新的合并包？每个包保留原包号和客户，拆包后再称重`);
+      : t(`Put ${parcels} into a new combined sack? The sack has no customer of its own; each parcel keeps its code and customer and is weighed / charged after the split.`,
+        `รวม ${parcels} ใส่ "กระสอบรวม" ใบใหม่? กระสอบไม่ต้องระบุลูกค้า แต่ละชิ้นยังเก็บเลขกล่องและลูกค้าเดิมไว้ ชั่ง/คิดค่าส่งแต่ละชิ้นตอนแยกกระสอบ`,
+        `把 ${parcels} 放进新的合并包？合并包不需要客户，每个包保留原包号和客户，拆包后再称重计费`);
     if (!await ask(msg)) return;
     const p: any = await run(() => api('/packing/merge', { body: { ids: picked.map((r) => r.id) } }), t('Done', 'รวมใส่กระสอบแล้ว', '已合并'));
     if (!p) return;
@@ -427,7 +427,7 @@ function PackingEditModal({ id, onClose, onSaved }: { id: number; onClose: () =>
         <Field label="No."><input type="number" value={p.no ?? ''} onChange={(e) => setData({ ...p, no: e.target.value })} /></Field>
         <Field label={t('Tracking', 'เลขแทรค', '单号')}><input value={p.tracking_no ?? ''} onChange={(e) => setData({ ...p, tracking_no: e.target.value })} /></Field>
         <Field label={t('Transport', 'ส่งทาง รถ / เรือ', '运输方式')}><TransportPick value={p.transport} onChange={(v) => setData({ ...p, transport: v })} /></Field>
-        <Field label={t('Other customers (tracking only)', 'ลูกค้ารอง (ไว้ติดตาม ไม่คิดเงิน)', '其他客户（仅跟踪）')}><OtherCustomersPick value={p.other_customer_ids} main={p.customer_id} onChange={(v) => setData({ ...p, other_customer_ids: v })} /></Field>
+        {!(p.children?.length > 0) && <Field label={t('Other customers (tracking only)', 'ลูกค้ารอง (ไว้ติดตาม ไม่คิดเงิน)', '其他客户（仅跟踪）')}><OtherCustomersPick value={p.other_customer_ids} main={p.customer_id} onChange={(v) => setData({ ...p, other_customer_ids: v })} /></Field>}
         <Measure v={p} set={setData} />
         <Field label={t('Remark', 'หมายเหตุ', '备注')} wide><input value={p.remark ?? ''} onChange={(e) => setData({ ...p, remark: e.target.value })} /></Field>
       </Grid>
@@ -488,7 +488,8 @@ export function PackingList() {
   // no customer and no search text: one line per customer; click a customer to see their boxes
   const grouped = !q.customer_id && !String(q.ref || '').trim();
   const [cust, setCust] = useState<{ id: number; code: string } | null>(null); // customer opened in the dialog
-  const { data, reload: reloadBoxes } = useApi<any[]>(grouped && !cust ? null : '/packing', cust ? { ...q, customer_id: cust.id } : q);
+  // cust.id 0 = the "combined sacks" line of the overview
+  const { data, reload: reloadBoxes } = useApi<any[]>(grouped && !cust ? null : '/packing', cust ? (cust.id ? { ...q, customer_id: cust.id } : { ...q, sacks: '1' }) : q);
   const groups = useApi<any[]>(grouped ? '/packing/by-customer' : null, q);
   const reload = () => { if (grouped) groups.reload(); if (!grouped || cust) reloadBoxes(); };
   const [edit, setEdit] = useState<number | null>(null);
@@ -522,8 +523,8 @@ export function PackingList() {
         { key: 'packing_code', label: t('Box no.', 'เลขกล่อง', '包号'), render: (r) => <BoxCode r={r} /> },
         { key: 'ref', label: t('Order / tracking / ref', 'เลขออเดอร์ / แทรค / ref', '订单号 / 单号 / 参考号'), render: (r) => <span className="clip">{boxRef(r)}</span> },
         { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户'), render: (r) => <>
-          {cust && r.customer_id !== cust.id ? <Badge>{t('secondary', 'ลูกค้ารอง', '次要')} · {t('main', 'หลัก', '主')} {r.customer_code}</Badge> : <b>{r.customer_code}</b>}
-          {r.other_customers && <div className="muted" style={{ fontSize: 12 }}>+ {r.other_customers}</div>}
+          {r.child_count > 0 ? <b>{r.customer_code}</b> : cust?.id && r.customer_id !== cust.id ? <Badge>{t('secondary', 'ลูกค้ารอง', '次要')} · {t('main', 'หลัก', '主')} {r.customer_code}</Badge> : <b>{r.customer_code}</b>}
+          {r.other_customers && !(r.child_count > 0) && <div className="muted" style={{ fontSize: 12 }}>+ {r.other_customers}</div>}
         </> },
         { key: 'contents', label: t('Contents', 'สินค้า', '产品'), render: (r) => <span className="clip">{contentsText(r, lang)}</span> },
         { key: 'transport', label: t('Transport', 'รถ/เรือ', '运输'), render: (r) => transportText(r.transport) },
@@ -570,7 +571,7 @@ export function PackingList() {
           <span className="muted">{groups.data ? `${groups.data.length} ${t('customers', 'ลูกค้า', '客户')} · ${groups.data.reduce((n, g) => n + g.boxes, 0)} ${t('boxes', 'กล่อง', '包')}` : ''}</span>
         </div>
         <Table rows={groups.data} onRow={(g) => { setSel(new Set()); setCust({ id: g.customer_id, code: g.customer_code }); }} columns={[
-          { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户'), render: (g) => <b>{g.customer_code}</b> },
+          { key: 'customer_code', label: t('Customer', 'ลูกค้า', '客户'), render: (g) => g.sacks ? <Badge tone="info">{g.customer_code}</Badge> : <b>{g.customer_code}</b> },
           { key: 'boxes', label: t('Boxes', 'จำนวนกล่อง', '包数'), align: 'right', sum: true, digits: 0 },
           { key: 'not_sent', label: t('Not loaded', 'ยังไม่ขึ้นตู้', '未发货'), align: 'right', sum: true, digits: 0 },
           { key: 'unweighed', label: t('Not weighed', 'ยังไม่ชั่ง', '未称'), align: 'right', sum: true, digits: 0, render: (g) => g.unweighed ? <Badge tone="warn">{g.unweighed}</Badge> : 0 },
