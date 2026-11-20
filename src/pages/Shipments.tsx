@@ -450,15 +450,6 @@ export function ShipmentReport() {
     groups.set(cat, g);
   }
   const summary = [...groups.values()].sort((a, b) => b.sacks - a.sacks);
-  const custMap = new Map<string, { code: string; boxes: any[]; weight: number; cbm: number }>();
-  for (const b of data.boxes) {
-    const c = custMap.get(b.customer_code) || { code: b.customer_code, boxes: [] as any[], weight: 0, cbm: 0 };
-    c.boxes.push(b); c.weight += Number(b.weight) || 0; c.cbm += b.cbm || 0;
-    custMap.set(b.customer_code, c);
-  }
-  const byCustomer = [...custMap.values()].sort((a, b) => String(a.code).localeCompare(String(b.code)));
-  const boxCodes = (c: { boxes: any[] }) => c.boxes.map((b) => b.packing_code).join(', ');
-  const catsOf = (c: { boxes: any[] }) => { const m = new Map<string, number>(); c.boxes.forEach((b) => m.set(catOf(b), (m.get(catOf(b)) || 0) + 1)); return [...m].map(([k, n]) => `${k} ×${n}`).join(', '); };
   const plain = (s: string) => s.replace(/[ ⁠]/g, (c) => (c === ' ' ? ' ' : ''));
   const exportXlsx = () => downloadXlsx(`packing-list-${data.shipment.code}`, [
     { name: plain(t('Summary', 'สรุป', '汇总')), widths: [28, 12, 12, 12], rows: [
@@ -467,10 +458,6 @@ export function ShipmentReport() {
       [plain(t('Category', 'ประเภทสินค้า', '产品分类')), plain(t('Sacks', 'กระสอบ', '包')), 'kg', 'm³'],
       ...summary.map((g) => [plain(g.cat), g.sacks, Math.round(g.weight * 100) / 100, Math.round(g.cbm * 10000) / 10000]),
       [plain(t('Total', 'รวม', '合计')), data.boxes.length, Math.round(sum(data.boxes, 'weight') * 100) / 100, Math.round(sum(data.boxes, 'cbm') * 10000) / 10000],
-    ] },
-    { name: plain(t('By customer', 'ตามลูกค้า', '按客户')), widths: [14, 10, 12, 12, 30, 60], rows: [
-      [plain(t('Customer', 'ลูกค้า', '客户')), plain(t('Sacks', 'กระสอบ', '包')), 'kg', 'm³', plain(t('Category', 'ประเภทสินค้า', '产品分类')), plain(t('Sack nos.', 'เลขกระสอบ', '包号'))],
-      ...byCustomer.map((c) => [c.code, c.boxes.length, Math.round(c.weight * 100) / 100, Math.round(c.cbm * 10000) / 10000, plain(catsOf(c)), boxCodes(c)]),
     ] },
     { name: 'Packing list', widths: [7, 7, 14, 14, 10, 16, 10, 22, 40], rows: [
       ['CTN', 'No', plain(t('Box', 'เลขกระสอบ', '包号')), plain(t('Customer', 'ลูกค้า', '客户')), 'kg', 'cm', 'm³', plain(t('Category', 'ประเภทสินค้า', '产品分类')), plain(t('Contents', 'สินค้า', '产品'))],
@@ -491,13 +478,6 @@ export function ShipmentReport() {
             <tr key={g.cat}><td>{g.cat}</td><td style={{ textAlign: 'right' }}>{g.sacks}</td><td style={{ textAlign: 'right' }}>{money(g.weight)}</td><td style={{ textAlign: 'right' }}>{g.cbm.toFixed(4)}</td></tr>
           ))}</tbody>
           <tfoot><tr><td>{t('Total', 'รวม', '合计')}</td><td style={{ textAlign: 'right' }}>{data.boxes.length}</td><td style={{ textAlign: 'right' }}>{money(sum(data.boxes, 'weight'))}</td><td style={{ textAlign: 'right' }}>{sum(data.boxes, 'cbm').toFixed(4)}</td></tr></tfoot>
-        </table>
-        <h3>{t('Summary by customer', 'สรุปตามลูกค้า', '按客户汇总')}</h3>
-        <table style={{ marginBottom: 20 }}>
-          <thead><tr><th>{t('Customer', 'ลูกค้า', '客户')}</th><th style={{ textAlign: 'right' }}>{t('Sacks', 'กระสอบ', '包')}</th><th style={{ textAlign: 'right' }}>kg</th><th style={{ textAlign: 'right' }}>m³</th><th>{t('Category', 'ประเภทสินค้า', '产品分类')}</th><th>{t('Sack nos.', 'เลขกระสอบ', '包号')}</th></tr></thead>
-          <tbody>{byCustomer.map((c) => (
-            <tr key={c.code}><td><b>{c.code}</b></td><td style={{ textAlign: 'right' }}>{c.boxes.length}</td><td style={{ textAlign: 'right' }}>{money(c.weight)}</td><td style={{ textAlign: 'right' }}>{c.cbm.toFixed(4)}</td><td>{catsOf(c)}</td><td>{boxCodes(c)}</td></tr>
-          ))}</tbody>
         </table>
         <h3>{t('All sacks', 'รายการกระสอบทั้งหมด', '全部包')}</h3>
         <table>
