@@ -231,6 +231,7 @@ export function migrate() {
   addColumn('orders', 'order_no', 'TEXT');
   addColumn('shipments', 'status', 'TEXT');
   addColumn('shipments', 'status_date', 'TEXT');
+  addColumn('supplier_banks', 'branch', 'TEXT'); // 支行, printed on the supplier bill
   db.exec('CREATE INDEX IF NOT EXISTS ix_orders_no ON orders(order_no)');
   addColumn('packings', 'transport', 'TEXT'); // truck | ship (how the box goes to Thailand)
   addColumn('shipments', 'transport', 'TEXT'); // truck | ship (round goes by truck or by ship), chosen when the round is created

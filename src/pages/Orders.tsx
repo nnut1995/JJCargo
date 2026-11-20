@@ -204,7 +204,7 @@ function OrderList({ search, onSearch }: { search: string; onSearch: (v: string)
         { key: 'deposit', label: t('Deposit', 'มัดจำ', '定金'), money: true },
         { key: 'payment_type', label: t('Payment', 'การจ่าย', '付款') },
         { key: 'a', label: '', render: (r) => <span className="row" onClick={(e) => e.stopPropagation()}>
-          {can.menu('package.new') && r.received_qty < r.qty && <button className="link" onClick={() => nav(`/packages/new?order_id=${r.id}`)}>{t('Open bill', 'เปิดบิลโอน', '开划款单')}</button>}
+          {can.menu('package.new') && !r.complete && r.received_qty < r.qty && <button className="link" onClick={() => nav(`/packages/new?order_id=${r.id}`)}>{t('Open bill', 'เปิดบิลโอน', '开划款单')}</button>}
           {r.qty - Math.max(r.received_qty, r.packed_qty) > 0 && <button className="link" onClick={() => nav(`/packing/new?order=${encodeURIComponent(r.order_no || r.id)}`)}>{t('Receive more', 'รับของเพิ่ม', '继续收货')}</button>}
           <button className="link" onClick={() => nav(`/orders/${r.id}`)}>{t('Edit', 'แก้ไข', '修改')}</button>
           <button className="link danger" onClick={() => del(r.id)}>{t('Delete', 'ลบ', '删除')}</button></span> },
@@ -212,9 +212,8 @@ function OrderList({ search, onSearch }: { search: string; onSearch: (v: string)
       {open && detail.data && (
         <Modal open wide onClose={closeDetail} title={`${t('Order', 'ออเดอร์', '订单')} ${detail.data.order_no || '#' + open} · ${detail.data.customer_code}`}
           footer={<>
-            {can.menu('package.new') && !detail.data.items.some((i: any) => i.quantity > i.received_qty) && <Link to={`/packages/new?customer_id=${detail.data.customer_id}`}><button><Plus size={16} aria-hidden /> {t('New bill for this customer', 'เปิดบิลโอนให้ลูกค้านี้', '为此客户开划款单')}</button></Link>}
             <Link to={`/orders/${open}`}><button><Pencil size={16} aria-hidden /> {t('Edit order', 'แก้ไขออเดอร์', '修改订单')}</button></Link>
-            {can.menu('package.new') && detail.data.items.some((i: any) => i.quantity > i.received_qty) && <Link to={`/packages/new?order_id=${open}`}><button className="primary"><Plus size={16} aria-hidden /> {t('New bill from this order', 'เปิดบิลโอนจากออเดอร์นี้', '按此订单开划款单')}</button></Link>}
+            {can.menu('package.new') && !detail.data.complete && detail.data.items.some((i: any) => i.quantity > i.received_qty) && <Link to={`/packages/new?order_id=${open}`}><button className="primary"><Plus size={16} aria-hidden /> {t('New bill from this order', 'เปิดบิลโอนจากออเดอร์นี้', '按此订单开划款单')}</button></Link>}
           </>}>
           <OrderInfo o={detail.data} />
           <Table rows={detail.data.items} columns={[

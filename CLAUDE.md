@@ -80,6 +80,8 @@ scripts/flow.ts        full business flow through the API with assertions (used 
   A sack has no customer of its own: `customer_id` (first parcel's customer, NOT NULL) is internal only, `PACKING_SELECT` returns
   `customer_code = SACK_LABEL` ("กระสอบรวม 合并包"), the packing overview groups sacks on one line (`sacks=1` filter), and the round's
   report / loading list (`/shipments/:id/report`, `/packings`) show only top-level boxes (parcels hidden; a sack lists its parcels' contents).
+- An order is **complete** ("ครบ") when every line has max(billed, packed) ≥ qty (`logic.orderComplete`, `complete` on order rows). A complete order gets no new supplier bill (server 409, buttons hidden, not in `/packages/waiting`).
+- Supplier bill print: bank list is 1 bank, 2 account name, 3 account no., 4 branch (`supplier_banks.branch`, 支行), 5 phone, then the "only receive goods, not responsible for payment" note. Shop accounts can be edited from the pencil next to the picker.
 - Shipment rounds have a `status` (steps in `shared/statuses.ts`) with history in `shipment_status_log` (`POST /api/shipments/:id/status`).
 - Dashboard figures and rows link to the related screen (no separate quick-menu card).
 - Customer screen opens read-only (Edit button); shows THB, CNY and unpaid shipping (unpaid `shipment_summaries`) separately.
