@@ -93,6 +93,14 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   // one tracking no. typed for several boxes -> each box gets TRACK-1, TRACK-2 … (scan on loading finds exactly one box)
   const nbTracks = await Promise.all(nb.created.map(async (c: any) => (await call(`/packing/${c.id}`)).tracking_no));
   assert.deepEqual(nbTracks, ['CH83207-1', 'CH83207-2']);
+  // contents typed once are shared out between the boxes (100 over 2 -> 50 each), and the list shows them
+  const nbStyles = await Promise.all(nb.created.map(async (c: any) => (await call(`/packing/${c.id}`)).styles.map((x: any) => x.quantity)));
+  assert.deepEqual(nbStyles, [[50], [50]]);
+  assert.match((await call('/packing?tracking=CH83207-1'))[0].contents_json, /"q":50/);
+  const odd = await call('/packing', { body: { customer_id: b.id, boxes: 3, styles: [{ style_id: clothes.id, quantity: 10 }, { style_id: shoes.id, quantity: 2 }] } });
+  const oddStyles = await Promise.all(odd.created.map(async (c: any) => (await call(`/packing/${c.id}`)).styles.map((x: any) => x.quantity)));
+  assert.deepEqual(oddStyles, [[4, 1], [3, 1], [3]]);
+  for (const c of odd.created) await call(`/packing/${c.id}`, { method: 'DELETE' });
   assert.equal((await call('/packing?tracking=CH83207')).filter((x: any) => nb.created.some((c: any) => c.id === x.id)).length, 2);
 
   log('demo feedback: receive first, weigh later; order numbers; overview per customer');

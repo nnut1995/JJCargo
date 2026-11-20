@@ -18,6 +18,8 @@ const transportOf = (v: any) => {
 const PACKING_SELECT = `SELECT p.*, c.code AS customer_code, c.firstname, s.code AS shipment_code,
   (SELECT COUNT(*) FROM packing_items i WHERE i.packing_id = p.id) AS item_count,
   (SELECT COUNT(*) FROM packing_styles st WHERE st.packing_id = p.id) AS style_count,
+  (SELECT json_group_array(json_object('th', s2.th, 'zh', s2.zh, 'en', s2.en, 'q', st.quantity)) FROM packing_styles st JOIN styles s2 ON s2.id = st.style_id
+     WHERE st.packing_id = p.id) AS contents_json,
   (SELECT GROUP_CONCAT(DISTINCT COALESCE(o.order_no, '#' || o.id)) FROM packing_items i JOIN order_items oi ON oi.id = i.order_item_id
      JOIN orders o ON o.id = oi.order_id WHERE i.packing_id = p.id) AS order_nos,
   (SELECT GROUP_CONCAT(c2.code, ', ') FROM packing_customers pc JOIN customers c2 ON c2.id = pc.customer_id WHERE pc.packing_id = p.id) AS other_customers,
@@ -83,6 +85,18 @@ function insertPacking(b: any, user: string) {
     run('INSERT INTO packing_styles (packing_id, style_id, quantity) VALUES (?,?,?)', [id, s.style_id, Number(s.quantity)]);
   }
   return { id, code };
+}
+
+/** Contents typed once for N boxes are shared out between them: 10 over 3 boxes -> 4, 3, 3 (decimals: 2 places, the rest on box 1).
+ *  A category with less than one per box only goes in the first boxes. */
+export function splitStyles(styles: any[] | undefined, i: number, n: number) {
+  if (!styles?.length || n <= 1) return styles;
+  return styles.map((st) => {
+    const q = Number(st.quantity);
+    if (Number.isInteger(q)) return { ...st, quantity: Math.floor(q / n) + (i < q % n ? 1 : 0) };
+    const each = Math.floor((q / n) * 100) / 100;
+    return { ...st, quantity: i === 0 ? Math.round((q - each * (n - 1)) * 100) / 100 : each };
+  }).filter((st) => st.quantity > 0);
 }
 
 export function logisticsRouter() {
@@ -152,7 +166,7 @@ export function logisticsRouter() {
       for (let i = 0; i < boxes; i++) {
         out.push(insertPacking({ ...b, packing_code: boxes > 1 ? undefined : b.packing_code, reference_id: ref ? `${ref}-${i + 1}` : undefined,
           tracking_no: tracking && boxes > 1 ? `${tracking}-${i + 1}` : tracking, // one tracking no. for N boxes -> TRACK-1..TRACK-N
-          items: i === 0 ? b.items : [], styles: b.styles,
+          items: i === 0 ? b.items : [], styles: splitStyles(b.styles, i, boxes),
           remark: boxes > 1 ? `${b.remark || ''} (${i + 1}/${boxes})`.trim() : b.remark }, req.user.username));
       }
       return out;
