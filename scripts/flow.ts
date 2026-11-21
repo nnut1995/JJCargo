@@ -78,8 +78,8 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   ] } });
   // packing can go up to the ordered qty (20) even though only 15 were billed: 5 left, so 6 is too many
   await call('/packing', { body: { customer_id: a.id, items: [{ order_item_id: o.items[1].id, quantity: 6 }] }, expect: 409 });
-  // box code = PK + running no.; reference id = yyyymm + monthly running no., e.g. 2026110001
-  const ym = `${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  // box code = PK + running no.; reference id = yymm + monthly running no., e.g. 26110001
+  const ym = `${String(new Date().getFullYear()).slice(2)}${String(new Date().getMonth() + 1).padStart(2, '0')}`;
   assert.match(pk1.created[0].code, /^PK\d{4,}$/);
   const ref1 = (await call(`/packing/${pk1.created[0].id}`)).reference_id;
   assert.match(ref1, new RegExp(`^${ym}\\d{4}$`));
@@ -88,7 +88,7 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   assert.equal(nb.created.length, 2);
   // boxes saved together share one running number with -1, -2 …; the next save continues the count
   const nbRefs = await Promise.all(nb.created.map(async (c: any) => (await call(`/packing/${c.id}`)).reference_id));
-  const base = Number(ref1.slice(6)) + 1;
+  const base = Number(ref1.slice(4)) + 1;
   assert.deepEqual(nbRefs, [1, 2].map((i) => `${ym}${String(base).padStart(4, '0')}-${i}`));
   assert.equal((await call(`/packing/${nbRefs[1]}`)).id, nb.created[1].id);
   // one tracking no. typed for several boxes -> each box gets TRACK-1, TRACK-2 … (scan on loading finds exactly one box)

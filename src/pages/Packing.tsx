@@ -4,7 +4,7 @@ import { api, useApi, useApp, useCan, useLang, useT, pick, cbm, money } from '..
 import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, StylePick, Badge, Modal, PrintModal, Barcode, Tabs, useAction, useAsk, useToast, Bi } from '../ui';
 import { Printer, ReceiptText, Plus, X, PackagePlus, PackageOpen, FileSpreadsheet, ArrowLeft, Combine, Ungroup } from 'lucide-react';
 
-// One reference per box for lists: order no. first, then tracking, then the reference id (yyyymmnnnn).
+// One reference per box for lists: order no. first, then tracking, then the reference id (yymmnnnn).
 /** Box code + sack info: a sack shows how many parcels it holds, a parcel shows which sack it is in. */
 function BoxCode({ r }: { r: any }) {
   const t = useT();

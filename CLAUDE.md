@@ -48,7 +48,7 @@ scripts/flow.ts        full business flow through the API with assertions (used 
 - Order / OrderDtl → `orders`, `order_items` (what the customer bought from a Chinese shop, prices in CNY)
 - Package / PackageDtl → `packages`, `package_items`: a **supplier bill** = goods received + money to transfer to the shop
 - PackageDtlsStatement → `package_item_statements` (deductions / refunds); PackagePayment → `package_payments`
-- ShipmentDtl → `packings` (one box/sack, unique box code `PK0001` = barcode; separate `reference_id` `yyyymmnnnn` e.g. `2026110001`, monthly running no.; `transport` truck|ship), ShipmentDtlsItem → `packing_items`, ShipmentDtlsStyle → `packing_styles`
+- ShipmentDtl → `packings` (one box/sack, unique box code `PK0001` = barcode; separate `reference_id` `yymmnnnn` e.g. `26110001` (was yyyymmnnnn until 2026-11-21; old ids are shortened on boot), monthly running no.; `transport` truck|ship), ShipmentDtlsItem → `packing_items`, ShipmentDtlsStyle → `packing_styles`
 - Shipment → `shipments` (a round / container; `transport` truck|ship chosen at creation, required for new rounds; loading fills an unset box `transport` from the round and flags a mismatch); ShipmentOtherAmount → `shipment_other_amounts`; posting → `shipment_summaries`
 - CustomerBalance / CustomerYuanBalance → `customer_balances` with `currency` THB|CNY (running balance computed, not stored)
 - PaymentInfo → `payment_infos` (customer "I transferred" notice; status 1 pending / 2 approved / 3 rejected)
