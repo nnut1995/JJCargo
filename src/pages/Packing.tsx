@@ -120,7 +120,7 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
           <div className="rcpt-title">ใบรับสินค้า <span>收货单</span></div>
         </div>
         <div className="rcpt-date">
-          <div>{t('Date', 'วันที่', '日期')}</div>
+          <div>วันที่รับของ 收货日期</div>
           <b>{now.toLocaleDateString('en-CA')}</b>
           <span>{now.toTimeString().slice(0, 5)}</span>
         </div>
@@ -131,7 +131,11 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
         <div><span>จำนวน 件数</span><b>{packings.length} <small>กล่อง 件</small></b></div>
         <div><span>ขนส่งทาง 运输方式</span><b>{transports.length ? transports.map((x) => x === 'truck' ? 'รถ 陆运' : 'เรือ 海运').join(' / ') : '—'}</b></div>
       </div>
-      {contents.size > 0 && <div className="rcpt-note"><span>สินค้า 产品</span>{[...contents.values()].map((c) => `${[c.th, c.zh].filter(Boolean).join(' ')} ×${c.q}`).join(' · ')}</div>}
+      {/* product type: printed from the boxes' contents when known, otherwise an empty box to write in */}
+      <div className="rcpt-type">
+        <span>ประเภทสินค้า 货物类型</span>
+        <div>{[...contents.values()].map((c) => `${[c.th, c.zh].filter(Boolean).join(' ')} ×${c.q}`).join(' · ')}</div>
+      </div>
       {notes.length > 0 && <div className="rcpt-note"><span>{t('Remark', 'หมายเหตุ', '备注')}</span>{notes.join(' · ')}</div>}
       <section className="rcpt-terms">
         <h3>หมายเหตุ 备注</h3>
@@ -144,6 +148,8 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
       <footer className="rcpt-sign">
         <div><i />ผู้ส่ง 送货人</div>
         <div><i />ผู้รับ 收货人</div>
+        {/* optional: the person dropping off may write their phone or leave it blank */}
+        <div className="rcpt-phone">เบอร์ผู้ส่ง 送货人电话 <i /></div>
       </footer>
     </div>
   );
