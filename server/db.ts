@@ -249,6 +249,7 @@ export function migrate() {
   addColumn('packings', 'transport', 'TEXT'); // truck | ship (how the box goes to Thailand)
   addColumn('shipments', 'transport', 'TEXT'); // truck | ship (round goes by truck or by ship), chosen when the round is created
   addColumn('packings', 'reference_id', 'TEXT'); // yymmnnnn, separate from the PK box code
+  addColumn('packings', 'sender_phone', 'TEXT'); // optional phone of whoever dropped the goods off, printed on the goods receipt
   addColumn('packings', 'parent_id', 'INTEGER REFERENCES packings(id)'); // small parcel inside a sack (กระสอบรวม); the sack goes on the round, parcels are charged
   db.exec('CREATE INDEX IF NOT EXISTS ix_packings_parent ON packings(parent_id) WHERE parent_id IS NOT NULL');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_packings_reference_id ON packings(reference_id) WHERE reference_id IS NOT NULL');

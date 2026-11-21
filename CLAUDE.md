@@ -72,6 +72,7 @@ scripts/flow.ts        full business flow through the API with assertions (used 
 
 ## 2026-11 demo feedback changes
 - `orders.order_no` = shop / platform order number typed by staff (unique when given). Show `order_no || '#'+id` everywhere an order is named.
+- Optional `packings.sender_phone` (เบอร์ผู้ส่ง) is typed when packing and printed on the goods receipt (blank line to handwrite otherwise).
 - Packing no longer needs weight, size or contents; boxes can be received first and measured later (`/packing/weigh`, `POST /api/packing/measure`).
 - An order line can be packed up to its **ordered** qty even before a supplier bill exists (bill = payment to the shop). "Not received yet" on orders = qty − max(billed, packed).
 - Sacks (กระสอบรวม): `packings.parent_id` puts small parcels (any customers) into a sack box (`POST /api/packing/merge`, `POST /api/packing/:id/split`).
