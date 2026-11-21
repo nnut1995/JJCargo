@@ -82,9 +82,9 @@ function insertPacking(b: any, user: string) {
   }
   const code = b.packing_code || nextPackingCode();
   if (get('SELECT 1 FROM packings WHERE packing_code = ?', [code])) throw new HttpError(409, `${code} already exists`);
-  const { id } = run(`INSERT INTO packings (packing_code, reference_id, shipment_id, ctn, no, customer_id, weight, cubic1, cubic2, cubic3, remark, tracking_no, transport, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [code, b.reference_id || nextReferenceId(), b.shipment_id || null, b.ctn || null, b.no || null, b.customer_id, Number(b.weight || 0),
-    Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0), b.remark || null, b.tracking_no || null, transportOf(b.transport), user]);
+  const { id } = run(`INSERT INTO packings (packing_code, reference_id, shipment_id, ctn, no, customer_id, weight, cubic1, cubic2, cubic3, remark, tracking_no, transport, sender_phone, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [code, b.reference_id || nextReferenceId(), b.shipment_id || null, b.ctn || null, b.no || null, b.customer_id, Number(b.weight || 0),
+    Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0), b.remark || null, b.tracking_no || null, transportOf(b.transport), String(b.sender_phone || '').trim() || null, user]);
   setOtherCustomers(id, b.customer_id, b.other_customer_ids);
   for (const it of items) run('INSERT INTO packing_items (packing_id, order_item_id, quantity, tracking_no, created_by) VALUES (?,?,?,?,?)',
     [id, it.order_item_id, Number(it.quantity), it.tracking_no || null, user]);
@@ -278,10 +278,10 @@ export function logisticsRouter() {
       throw new HttpError(409, 'สรุปยอดแล้ว — undo the shipping summary for this customer first');
     }
     run(`UPDATE packings SET shipment_id=?, ctn=?, no=?, weight=?, cubic1=?, cubic2=?, cubic3=?, remark=?, tracking_no=?, transport=?, rate_type=?, rate=?,
-      off_china_date=?, updated_by=?, updated_at=CURRENT_TIMESTAMP WHERE id = ?`,
+      sender_phone=?, off_china_date=?, updated_by=?, updated_at=CURRENT_TIMESTAMP WHERE id = ?`,
       [b.shipment_id || null, b.ctn || null, b.no || null, Number(b.weight || 0), Number(b.cubic1 || 0), Number(b.cubic2 || 0), Number(b.cubic3 || 0),
         b.remark || null, b.tracking_no || null, transportOf(b.transport), b.rate_type || null, b.rate === '' || b.rate == null ? null : Number(b.rate),
-        b.shipment_id ? b.off_china_date || null : null, req.user.username, p.id]);
+        'sender_phone' in b ? String(b.sender_phone || '').trim() || null : p.sender_phone, b.shipment_id ? b.off_china_date || null : null, req.user.username, p.id]);
     if ('other_customer_ids' in req.body) setOtherCustomers(p.id, b.customer_id, req.body.other_customer_ids);
     syncChildren(p.id);
     audit(req.user.username, 'update', 'packings', p.id, req.body);

@@ -4,7 +4,7 @@ import { api, useApi, useApp, useCan, useLang, useT, pick, cbm, money } from '..
 import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, StylePick, Badge, Modal, PrintModal, Barcode, Tabs, useAction, useAsk, useToast, Bi } from '../ui';
 import { Printer, ReceiptText, Plus, X, PackagePlus, PackageOpen, FileSpreadsheet, ArrowLeft, Combine, Ungroup } from 'lucide-react';
 
-// One reference per box for lists: order no. first, then tracking, then the reference id (yyyymmnnnn).
+// One reference per box for lists: order no. first, then tracking, then the reference id (yymmnnnn).
 /** Box code + sack info: a sack shows how many parcels it holds, a parcel shows which sack it is in. */
 function BoxCode({ r }: { r: any }) {
   const t = useT();
@@ -109,6 +109,7 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
     const c = contents.get(st.style_id) || { th: st.style_th, zh: st.style_zh || st.style_en, q: 0 };
     c.q = Math.round((c.q + Number(st.quantity)) * 100) / 100; contents.set(st.style_id, c);
   }
+  const senderPhones = [...new Set(packings.map((p) => String(p.sender_phone || '').trim()).filter(Boolean))];
   const transports = [...new Set(packings.map((p) => p.transport).filter((x) => x === 'truck' || x === 'ship'))] as string[];
   if (mixedRefs(packings)) return <div className="doc receipt"><p><b>{t('These boxes have different ref numbers: one goods receipt per ref.', 'กล่องที่เลือกมีเลข ref ต่างกัน ออกใบรับของรวมกันไม่ได้ (1 ใบต่อ 1 เลข ref)', '所选包裹的 ref 号不同，不能开同一张收货单')}</b></p>
     <p>{[...new Set(packings.map(refBase))].map((r) => r || '—').join(', ')}</p></div>;
@@ -120,7 +121,7 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
           <div className="rcpt-title">ใบรับสินค้า <span>收货单</span></div>
         </div>
         <div className="rcpt-date">
-          <div>{t('Date', 'วันที่', '日期')}</div>
+          <div>วันที่รับของ 收货日期</div>
           <b>{now.toLocaleDateString('en-CA')}</b>
           <span>{now.toTimeString().slice(0, 5)}</span>
         </div>
@@ -131,7 +132,11 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
         <div><span>จำนวน 件数</span><b>{packings.length} <small>กล่อง 件</small></b></div>
         <div><span>ขนส่งทาง 运输方式</span><b>{transports.length ? transports.map((x) => x === 'truck' ? 'รถ 陆运' : 'เรือ 海运').join(' / ') : '—'}</b></div>
       </div>
-      {contents.size > 0 && <div className="rcpt-note"><span>สินค้า 产品</span>{[...contents.values()].map((c) => `${[c.th, c.zh].filter(Boolean).join(' ')} ×${c.q}`).join(' · ')}</div>}
+      {/* product type: printed from the boxes' contents when known, otherwise an empty box to write in */}
+      <div className="rcpt-type">
+        <span>ประเภทสินค้า 货物类型</span>
+        <div>{[...contents.values()].map((c) => `${[c.th, c.zh].filter(Boolean).join(' ')} ×${c.q}`).join(' · ')}</div>
+      </div>
       {notes.length > 0 && <div className="rcpt-note"><span>{t('Remark', 'หมายเหตุ', '备注')}</span>{notes.join(' · ')}</div>}
       <section className="rcpt-terms">
         <h3>หมายเหตุ 备注</h3>
@@ -144,6 +149,8 @@ export function ReceiptDoc({ packings }: { packings: any[] }) {
       <footer className="rcpt-sign">
         <div><i />ผู้ส่ง 送货人</div>
         <div><i />ผู้รับ 收货人</div>
+        {/* optional: the person dropping off may write their phone or leave it blank */}
+        <div className="rcpt-phone">เบอร์ผู้ส่ง 送货人电话 {senderPhones.length ? <b>{senderPhones.join(', ')}</b> : <i />}</div>
       </footer>
     </div>
   );
@@ -183,7 +190,7 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
   const { lang } = useLang();
   const { lookups } = useApp();
   const { run, busy } = useAction();
-  const blank = { customer_id: null as any, shipment_id: null as any, weight: '', cubic1: '', cubic2: '', cubic3: '', remark: '', tracking_no: '', boxes: 1, ctn: '', no: '' };
+  const blank = { customer_id: null as any, shipment_id: null as any, weight: '', cubic1: '', cubic2: '', cubic3: '', remark: '', tracking_no: '', sender_phone: '', boxes: 1, ctn: '', no: '' };
   const [h, setH] = useState<any>(blank);
   const [items, setItems] = useState<any[]>([]);
   const [styles, setStyles] = useState<any[]>([]);
@@ -249,6 +256,7 @@ function PackNewModal({ mode, order, onClose, onSaved }: { mode: 'order' | 'nobi
           {mode === 'nobill' && <Field label={t('Tracking no. (optional)', 'เลขแทรค (ไม่บังคับ)', '别的单号')}
             hint={Number(h.boxes) > 1 && h.tracking_no.trim() ? `${t('Saved as', 'จะบันทึกเป็น', '保存为')} ${h.tracking_no.trim()}-1 … ${h.tracking_no.trim()}-${h.boxes}` : undefined}><input value={h.tracking_no} onChange={(e) => setH({ ...h, tracking_no: e.target.value })} /></Field>}
           <Field label={t('Transport', 'ส่งทาง รถ / เรือ', '运输方式')}><TransportPick value={h.transport} onChange={(v) => setH({ ...h, transport: v })} /></Field>
+          <Field label={t('Sender phone (optional)', 'เบอร์ผู้ส่ง (ไม่บังคับ)', '送货人电话（可不填）')} hint={t('Printed on the goods receipt', 'พิมพ์บนใบรับของ', '打印在收货单上')}><input type="tel" value={h.sender_phone} onChange={(e) => setH({ ...h, sender_phone: e.target.value })} /></Field>
           <Field label={t('Other customers (tracking only)', 'ลูกค้ารอง (ไว้ติดตาม ไม่คิดเงิน)', '其他客户（仅跟踪）')}><OtherCustomersPick value={h.other_customer_ids} main={h.customer_id} onChange={(v) => setH({ ...h, other_customer_ids: v })} /></Field>
           <Measure v={h} set={setH} />
           {lookups.settings.input_ctn_and_no === '1' && <>
@@ -427,6 +435,7 @@ function PackingEditModal({ id, onClose, onSaved }: { id: number; onClose: () =>
         <Field label="No."><input type="number" value={p.no ?? ''} onChange={(e) => setData({ ...p, no: e.target.value })} /></Field>
         <Field label={t('Tracking', 'เลขแทรค', '单号')}><input value={p.tracking_no ?? ''} onChange={(e) => setData({ ...p, tracking_no: e.target.value })} /></Field>
         <Field label={t('Transport', 'ส่งทาง รถ / เรือ', '运输方式')}><TransportPick value={p.transport} onChange={(v) => setData({ ...p, transport: v })} /></Field>
+        <Field label={t('Sender phone (optional)', 'เบอร์ผู้ส่ง (ไม่บังคับ)', '送货人电话（可不填）')}><input type="tel" value={p.sender_phone ?? ''} onChange={(e) => setData({ ...p, sender_phone: e.target.value })} /></Field>
         {!(p.children?.length > 0) && <Field label={t('Other customers (tracking only)', 'ลูกค้ารอง (ไว้ติดตาม ไม่คิดเงิน)', '其他客户（仅跟踪）')}><OtherCustomersPick value={p.other_customer_ids} main={p.customer_id} onChange={(v) => setData({ ...p, other_customer_ids: v })} /></Field>}
         <Measure v={p} set={setData} />
         <Field label={t('Remark', 'หมายเหตุ', '备注')} wide><input value={p.remark ?? ''} onChange={(e) => setData({ ...p, remark: e.target.value })} /></Field>

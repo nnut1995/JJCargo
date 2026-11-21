@@ -248,10 +248,14 @@ export function migrate() {
   db.exec('CREATE INDEX IF NOT EXISTS ix_orders_no ON orders(order_no)');
   addColumn('packings', 'transport', 'TEXT'); // truck | ship (how the box goes to Thailand)
   addColumn('shipments', 'transport', 'TEXT'); // truck | ship (round goes by truck or by ship), chosen when the round is created
-  addColumn('packings', 'reference_id', 'TEXT'); // yyyymmnnnn, separate from the PK box code
+  addColumn('packings', 'reference_id', 'TEXT'); // yymmnnnn, separate from the PK box code
+  addColumn('packings', 'sender_phone', 'TEXT'); // optional phone of whoever dropped the goods off, printed on the goods receipt
   addColumn('packings', 'parent_id', 'INTEGER REFERENCES packings(id)'); // small parcel inside a sack (กระสอบรวม); the sack goes on the round, parcels are charged
   db.exec('CREATE INDEX IF NOT EXISTS ix_packings_parent ON packings(parent_id) WHERE parent_id IS NOT NULL');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_packings_reference_id ON packings(reference_id) WHERE reference_id IS NOT NULL');
+  // 2026-11-21: reference ids went from yyyymmnnnn to yymmnnnn (2026110124 -> 26110124); shorten the old ones once
+  run(`UPDATE packings SET reference_id = substr(reference_id, 3) WHERE reference_id GLOB '20[0-9][0-9][01][0-9][0-9][0-9][0-9][0-9]*'
+    AND NOT EXISTS (SELECT 1 FROM packings x WHERE x.reference_id = substr(packings.reference_id, 3))`);
   if (!get('SELECT 1 FROM provinces LIMIT 1')) {
     PROVINCES.forEach((n, i) => run('INSERT INTO provinces (id, name) VALUES (?, ?)', [i + 1, n]));
   }
