@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { api, useApi, useApp, useCan, useLang, useT, pick, cbm, money } from '../lib';
 import { Page, Card, Grid, Field, Table, CustomerPick, ShipmentPick, StylePick, Badge, Modal, PrintModal, Barcode, Tabs, useAction, useAsk, useToast, Bi } from '../ui';
-import { Printer, ReceiptText, Plus, X, PackagePlus, PackageOpen, FileSpreadsheet, ArrowLeft, Combine, Ungroup } from 'lucide-react';
+import { Printer, ReceiptText, Container, Plus, X, PackagePlus, PackageOpen, FileSpreadsheet, ArrowLeft, Combine, Ungroup } from 'lucide-react';
 
 // One reference per box for lists: order no. first, then tracking, then the reference id (yyyymmnnnn).
 /** Box code + sack info: a sack shows how many parcels it holds, a parcel shows which sack it is in. */
@@ -317,20 +317,39 @@ export function PackWeigh() {
   const [edits, setEdits] = useState<Record<number, any>>({});
   const [sel, setSel] = useState<Set<any>>(new Set());
   const [print, setPrint] = useState<any[] | null>(null);
-  const [bulk, setBulk] = useState<any>({ weight: '', cubic1: '', cubic2: '', cubic3: '' });
+  const [bulk, setBulk] = useState<any>({ weight: '', cubic1: '', cubic2: '', cubic3: '', shipment_id: null });
   const { run, busy } = useAction();
+  const toast = useToast();
+  const canLoad = useCan().menu('packing.offchina');
+  // ขึ้นตู้หลังชั่ง: a round chosen here goes on every box as soon as its weight / size is typed (each row can change or clear it)
+  const [autoRound, setAutoRound] = useState<number | null>(null);
+  const loadable = (r: any) => canLoad && !r.parent_id && !r.off_china_date;
   const rows = (data || []).map((r) => ({ ...r, ...edits[r.id] }));
   // bulk: copy the filled-in fields to every ticked box (saved together with the normal Save)
   const bulkFields = Object.entries(bulk).filter(([, v]) => v !== '' && v !== null);
   const applyBulk = () => {
     if (!sel.size || !bulkFields.length) return;
-    setEdits((e) => { const n = { ...e }; sel.forEach((id) => { n[id] = { ...n[id], ...Object.fromEntries(bulkFields) }; }); return n; });
+    setEdits((e) => {
+      const n = { ...e };
+      sel.forEach((id) => {
+        const r = data?.find((x) => x.id === id);
+        n[id] = { ...n[id], ...Object.fromEntries(bulkFields.filter(([k]) => k !== 'shipment_id' || (r && loadable(r)))) };
+      });
+      return n;
+    });
   };
   const dirty = Object.keys(edits).length;
-  const set = (id: number, k: string, v: string) => setEdits((e) => ({ ...e, [id]: { ...e[id], [k]: v } }));
+  const set = (id: number, k: string, v: any) => setEdits((e) => {
+    const r = data?.find((x) => x.id === id);
+    const auto = k !== 'shipment_id' && autoRound && v !== '' && r && loadable(r) && !(e[id] && 'shipment_id' in e[id]) ? { shipment_id: autoRound } : {};
+    return { ...e, [id]: { ...e[id], ...auto, [k]: v } };
+  });
   const save = async () => {
     const body = { rows: Object.entries(edits).map(([id, v]) => ({ id: Number(id), ...v })) };
-    if (!await run(() => api('/packing/measure', { body }))) return;
+    const res: any = await run(() => api('/packing/measure', { body }), false);
+    if (!res) return;
+    toast(res.loaded ? t(`Saved, ${res.loaded} box(es) loaded on the round`, `บันทึกแล้ว ขึ้นตู้ ${res.loaded} กล่อง`, `已保存，${res.loaded} 包已上车`) : t('Saved', 'บันทึกเรียบร้อย', '保存成功'));
+    if (res.transport_mismatch?.length) toast(t(`Marked for the other transport than the round: ${res.transport_mismatch.join(', ')}`, `กล่องที่ระบุทางส่งไม่ตรงกับรอบ (รถ/เรือ): ${res.transport_mismatch.join(', ')}`, `运输方式与发货单不同: ${res.transport_mismatch.join(', ')}`), 'err');
     setEdits({}); reload();
     // labels for the boxes just weighed, so the new kg / size can go on the box straight away
     setPrint(await Promise.all(body.rows.map((r) => api(`/packing/${r.id}`))));
@@ -384,12 +403,18 @@ export function PackWeigh() {
             </select>
           </Field>
         </Grid>
+        {canLoad && <div className="row" style={{ marginTop: 12, alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <b><Container size={16} aria-hidden /> {t('Load on round after weighing', 'ขึ้นตู้หลังชั่ง', '称重后上车')}:</b>
+          <div style={{ minWidth: 260 }}><ShipmentPick value={autoRound} onChange={setAutoRound} placeholder={t('-- don\'t load yet --', '--ยังไม่ขึ้นตู้--', '暂不上车')} /></div>
+          <span className="muted">{t('Boxes you weigh go on this round when you press Save.', 'กล่องที่ใส่น้ำหนักจะขึ้นตู้รอบนี้เมื่อกดบันทึก (เปลี่ยน/ลบได้ทีละแถว)', '保存时，已称重的包会上这个发货单')}</span>
+        </div>}
         <div className="row" style={{ marginTop: 12, alignItems: 'flex-end', flexWrap: 'wrap', gap: 8 }}>
           <b style={{ alignSelf: 'center' }}>{t('Same for ticked boxes', 'ใส่ค่าเดียวกันให้ที่ติ๊ก', '批量填写')}:</b>
           {(['weight', 'cubic1', 'cubic2', 'cubic3'] as const).map((k) => (
             <input key={k} type="number" step="any" min={0} style={{ width: 110 }} value={bulk[k]} onChange={(e) => setBulk({ ...bulk, [k]: e.target.value })}
               placeholder={k === 'weight' ? 'kg' : k === 'cubic1' ? t('W cm', 'กว้าง', '宽') : k === 'cubic2' ? t('L cm', 'ยาว', '长') : t('H cm', 'สูง', '高')} aria-label={k} />
           ))}
+          {canLoad && <div style={{ minWidth: 220 }}><ShipmentPick value={bulk.shipment_id} onChange={(v) => setBulk({ ...bulk, shipment_id: v })} placeholder={t('-- load on round --', '--ขึ้นตู้รอบ--', '上车发货单')} /></div>}
           <button disabled={!sel.size || !bulkFields.length} onClick={applyBulk}>{t('Apply to ticked', 'ใส่ให้ที่ติ๊ก', '应用到已选')} ({sel.size})</button>
         </div>
         <p className="muted" style={{ marginBottom: 0 }}>{t('Type the numbers and press Enter to move down, or tick boxes and fill them all at once above. Press Save once at the end. Small parcels: tick them and press "Put into one sack" (customers may differ), then weigh the sack. Parcels in a sack are weighed after the split.', 'พิมพ์ตัวเลขแล้วกด Enter เพื่อไปช่องถัดไป หรือติ๊กหลายกล่องแล้วใส่ค่าเดียวกันด้านบน เสร็จแล้วกดบันทึกครั้งเดียว พัสดุชิ้นเล็ก ติ๊กแล้วกด "รวมใส่กระสอบ" (คนละลูกค้าได้) แล้วชั่งกระสอบ ส่วนแต่ละชิ้นค่อยชั่งตอนแยกกระสอบ', '输入后按 Enter 跳到下一格，或勾选后批量填写，最后保存。小包可勾选后点“合并成一个包”（可不同客户），称合并包；拆包后再称每个小包')}</p>
@@ -403,6 +428,12 @@ export function PackWeigh() {
         { key: 'cubic2', label: t('L cm', 'ยาว', '长'), render: cell('cubic2') },
         { key: 'cubic3', label: t('H cm', 'สูง', '高'), render: cell('cubic3') },
         { key: 'cbm', label: t('CBM', 'คิว', '立方'), align: 'right', render: (r) => cbmText(r) },
+        ...(canLoad ? [{ key: 'load', label: t('Load on round', 'ขึ้นตู้', '上车'), render: (r: any) => {
+          const o = data?.find((x) => x.id === r.id) || r;
+          if (o.off_china_date) return <span title={o.off_china_date}><Badge tone="good">{o.shipment_code}</Badge></span>;
+          if (o.parent_id) return <span className="muted">{t('in sack', 'อยู่ในกระสอบ', '在合并包')}</span>;
+          return <div style={{ minWidth: 180 }}><ShipmentPick value={edits[r.id]?.shipment_id ?? null} onChange={(v) => set(r.id, 'shipment_id', v)} placeholder="—" /></div>;
+        } }] : []),
         { key: 'created_at', label: t('Received', 'รับเมื่อ', '收货'), render: (r) => r.created_at?.slice(0, 16) },
       ]} empty={t('All boxes have weight and size', 'ทุกกล่องชั่ง/วัดครบแล้ว', '全部已称重')} />
       <PackPrint packings={print} onClose={() => setPrint(null)} />

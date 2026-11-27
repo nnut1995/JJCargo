@@ -294,6 +294,26 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   await call('/packages', { body: { customer_id: b.id, date: d, items: [{ order_item_id: o2.items[0].id, quantity: 5, unit_price: 40 }] } });
   const unpaid = await call('/unpaid');
   assert.ok(unpaid.bills.length >= 1);
+  log('weigh later + load on a round in one save');
+  const wr = await call('/r/shipments', { body: { code: 'JJ-WEIGH', date: d, transport: 'ship' } });
+  const wb = await call('/packing', { body: { customer_id: a.id, tracking_no: 'WEIGH1', boxes: 2 } });
+  const wres = await call('/packing/measure', { body: { rows: [
+    { id: wb.created[0].id, weight: 3, cubic1: 10, cubic2: 10, cubic3: 10, shipment_id: wr.id },
+    { id: wb.created[1].id, weight: 4 },
+  ] } });
+  assert.equal(wres.saved, 2);
+  assert.equal(wres.loaded, 1);
+  const w0 = await call(`/packing/${wb.created[0].id}`);
+  assert.equal(w0.shipment_id, wr.id);
+  assert.ok(w0.off_china_date && w0.ctn === 1);
+  assert.equal(w0.transport, 'ship'); // unset transport follows the round
+  assert.equal((await call(`/packing/${wb.created[1].id}`)).off_china_date, null);
+  // loading only (no new measurements) works too, and a box already on the round is left alone
+  assert.equal((await call('/packing/measure', { body: { rows: [{ id: wb.created[1].id, shipment_id: wr.id }, { id: wb.created[0].id, shipment_id: wr.id }] } })).loaded, 1);
+  assert.deepEqual((await call(`/shipments/${wr.id}/packings`)).map((x: any) => x.ctn), [1, 2]);
+  // a box loaded on one round can't be moved to another from here
+  await call('/packing/measure', { body: { rows: [{ id: wb.created[0].id, shipment_id: ship.id }] }, expect: 409 });
+
   const dash = await call('/dashboard');
   assert.ok(dash.customers >= 2);
 

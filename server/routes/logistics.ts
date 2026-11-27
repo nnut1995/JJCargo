@@ -1,7 +1,7 @@
 // Packing (boxes / sacks), shipment rounds, loading containers, shipping cost summaries.
 import { Router } from 'express';
 import { all, get, run, tx, audit } from '../db.js';
-import { HttpError, needMenu } from '../auth.js';
+import { HttpError, needMenu, canMenu } from '../auth.js';
 import { SHIPMENT_STATUS_KEYS } from '../../shared/statuses.js';
 import {
   addBalance, removeBalanceBySource, orderItemProgress, nextPackingCode, nextReferenceId, shipmentCustomerCharges, cubicMeters, round2, today,
@@ -63,6 +63,21 @@ function syncChildren(parentId: number) {
     [parentId, parentId, parentId]);
 }
 const inSackError = (p: any) => new HttpError(409, `${p.packing_code}: อยู่ในกระสอบ ${get<any>('SELECT packing_code FROM packings WHERE id = ?', [p.parent_id])?.packing_code} ใช้กระสอบแทน / 在合并包里`);
+/** Put one top-level box on a round (ขึ้นตู้): sets round, loaded date, CTN / running no.; parcels in a sack follow.
+ *  Returns true when the box was marked for the other transport (truck / ship) than the round. */
+function loadBox(s: any, p: any, user: string, date?: string, ctnIn?: any, noIn?: any) {
+  const sid = s.id;
+  if (p.parent_id) throw inSackError(p);
+  if (p.shipment_id && p.shipment_id !== sid && p.off_china_date) throw new HttpError(409, `${p.packing_code} is already loaded on another shipment / 已在其他发货单`);
+  const ctn = ctnIn ?? (get<any>('SELECT COALESCE(MAX(ctn),0) AS m FROM packings WHERE shipment_id = ?', [sid]).m + 1);
+  const no = noIn ?? (get<any>('SELECT COUNT(*) AS n FROM packings WHERE shipment_id = ? AND customer_id = ?', [sid, p.customer_id]).n + (p.shipment_id === sid ? 0 : 1));
+  run('UPDATE packings SET shipment_id = ?, off_china_date = ?, ctn = COALESCE(ctn, ?), no = COALESCE(no, ?), updated_by = ? WHERE id = ?',
+    [sid, date || today(), ctn, no, user, p.id]);
+  // a box with no transport set goes the way its round goes (truck / ship); a box marked for the other way is loaded but flagged
+  if (s.transport) run('UPDATE packings SET transport = ? WHERE (id = ? OR parent_id = ?) AND transport IS NULL', [s.transport, p.id, p.id]);
+  syncChildren(p.id);
+  return !!(s.transport && p.transport && p.transport !== s.transport);
+}
 
 function insertPacking(b: any, user: string) {
   if (!b.customer_id) throw new HttpError(400, 'กรุณาเลือกลูกค้าด้วย / 不要忘记输入顾客');
@@ -189,24 +204,36 @@ export function logisticsRouter() {
     res.json({ created, packings: created.map((c) => packingDetail(c.id)) });
   });
   // "ชั่งน้ำหนักทีหลัง": save weight / size for many boxes at once
+  // "ชั่งน้ำหนักทีหลัง": save weight / size for many boxes at once; a row with `shipment_id` is also loaded on that round (ขึ้นตู้)
   r.post('/packing/measure', needMenu('packing.weigh', 'packing.search'), (req, res) => {
     const rows: any[] = req.body.rows || [];
     const n = (v: any) => (v === '' || v == null ? 0 : Number(v));
+    const loads: { packing_code: string; shipment: string; mismatch: boolean }[] = [];
     const saved = tx(() => rows.map((x) => {
       const p = get<any>('SELECT * FROM packings WHERE id = ?', [x.id]);
       if (!p) throw new HttpError(404, `Box ${x.id} not found`);
       const changed = ['weight', 'cubic1', 'cubic2', 'cubic3'].some((k) => k in x && n(x[k]) !== (p[k] || 0));
-      if (!changed) return null;
-      if (get('SELECT 1 FROM shipment_summaries WHERE shipment_id = ? AND customer_id = ?', [p.shipment_id, p.customer_id])) {
-        throw new HttpError(409, `${p.packing_code}: สรุปยอดแล้ว — undo the shipping summary first`);
+      if (changed) {
+        if (get('SELECT 1 FROM shipment_summaries WHERE shipment_id = ? AND customer_id = ?', [p.shipment_id, p.customer_id])) {
+          throw new HttpError(409, `${p.packing_code}: สรุปยอดแล้ว — undo the shipping summary first`);
+        }
+        for (const k of ['weight', 'cubic1', 'cubic2', 'cubic3']) if (k in x && !(n(x[k]) >= 0)) throw new HttpError(400, `${p.packing_code}: ${k} ไม่ถูกต้อง`);
+        run('UPDATE packings SET weight=?, cubic1=?, cubic2=?, cubic3=?, updated_by=?, updated_at=CURRENT_TIMESTAMP WHERE id = ?',
+          [n(x.weight ?? p.weight), n(x.cubic1 ?? p.cubic1), n(x.cubic2 ?? p.cubic2), n(x.cubic3 ?? p.cubic3), req.user.username, p.id]);
       }
-      for (const k of ['weight', 'cubic1', 'cubic2', 'cubic3']) if (k in x && !(n(x[k]) >= 0)) throw new HttpError(400, `${p.packing_code}: ${k} ไม่ถูกต้อง`);
-      run('UPDATE packings SET weight=?, cubic1=?, cubic2=?, cubic3=?, updated_by=?, updated_at=CURRENT_TIMESTAMP WHERE id = ?',
-        [n(x.weight ?? p.weight), n(x.cubic1 ?? p.cubic1), n(x.cubic2 ?? p.cubic2), n(x.cubic3 ?? p.cubic3), req.user.username, p.id]);
-      return p.id;
+      const sid = Number(x.shipment_id) || 0;
+      const load = sid > 0 && !(p.shipment_id === sid && p.off_china_date);
+      if (load) {
+        if (!canMenu(req.user, 'packing.offchina')) throw new HttpError(403, 'ไม่มีสิทธิ์ขึ้นตู้ / 没有上车权限');
+        const s = get<any>('SELECT * FROM shipments WHERE id = ?', [sid]);
+        if (!s) throw new HttpError(404, 'Shipment not found');
+        loads.push({ packing_code: p.packing_code, shipment: s.code, mismatch: loadBox(s, p, req.user.username, x.date) });
+      }
+      return changed || load ? p.id : null;
     }).filter(Boolean));
-    audit(req.user.username, 'measure', 'packings', undefined, { ids: saved });
-    res.json({ ok: true, saved: saved.length });
+    for (const l of loads) void notifyStatus('off_china', { packing_code: l.packing_code, shipment: l.shipment });
+    audit(req.user.username, 'measure', 'packings', undefined, { ids: saved, loaded: loads.map((l) => l.packing_code) });
+    res.json({ ok: true, saved: saved.length, loaded: loads.length, transport_mismatch: loads.filter((l) => l.mismatch).map((l) => l.packing_code) });
   });
   // "รวมใส่กระสอบ": small parcels (any customers) go into one sack. The sack is a box of its own (new PK code, label,
   // weighed, loaded on a round); the parcels keep their codes/customers, follow the sack and are charged after the split.
@@ -391,17 +418,9 @@ export function logisticsRouter() {
     }
     if (!p && /^\d+$/.test(code)) p = get<any>('SELECT * FROM packings WHERE shipment_id = ? AND ctn = ?', [sid, Number(code)]);
     if (!p) throw new HttpError(404, `ไม่พบเลขกล่อง / 找不到这个包号: ${code}`);
-    if (p.parent_id) throw inSackError(p);
-    if (p.shipment_id && p.shipment_id !== sid && p.off_china_date) throw new HttpError(409, `${p.packing_code} is already loaded on another shipment`);
-    const ctn = req.body.ctn ?? (get<any>('SELECT COALESCE(MAX(ctn),0) AS m FROM packings WHERE shipment_id = ?', [sid]).m + 1);
-    const no = req.body.no ?? (get<any>('SELECT COUNT(*) AS n FROM packings WHERE shipment_id = ? AND customer_id = ?', [sid, p.customer_id]).n + (p.shipment_id === sid ? 0 : 1));
-    run('UPDATE packings SET shipment_id = ?, off_china_date = ?, ctn = COALESCE(ctn, ?), no = COALESCE(no, ?), updated_by = ? WHERE id = ?',
-      [sid, req.body.date || today(), ctn, no, req.user.username, p.id]);
-    // a box with no transport set goes the way its round goes (truck / ship); a box marked for the other way is loaded but flagged
-    if (s.transport) run('UPDATE packings SET transport = ? WHERE (id = ? OR parent_id = ?) AND transport IS NULL', [s.transport, p.id, p.id]);
-    syncChildren(p.id);
+    const mismatch = loadBox(s, p, req.user.username, req.body.date, req.body.ctn, req.body.no);
     void notifyStatus('off_china', { packing_code: p.packing_code, shipment: s.code });
-    res.json({ ...packingDetail(p.id), transport_mismatch: !!(s.transport && p.transport && p.transport !== s.transport) });
+    res.json({ ...packingDetail(p.id), transport_mismatch: mismatch });
   });
   r.post('/shipments/:id/unload', needMenu('packing.offchina'), (req, res) => {
     const p = get<any>('SELECT * FROM packings WHERE id = ? AND shipment_id = ?', [req.body.packing_id, req.params.id]);
