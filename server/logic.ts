@@ -91,10 +91,18 @@ export function shipmentCustomerCharges(shipmentId: number, customerId: number, 
     // a sack (กระสอบรวม) is only the container for its parcels; the parcels are what gets charged
     'SELECT * FROM packings p WHERE shipment_id = ? AND customer_id = ? AND NOT EXISTS (SELECT 1 FROM packings ch WHERE ch.parent_id = p.id) ORDER BY ctn, no, id', [shipmentId, customerId],
   ).map((p) => ({ ...p, ...packingPrice(p, rates, currency) }));
+  // boxes packed from orders: the order no(s). and the goods value in the box (packed qty × order unit price, CNY)
+  const goods = new Map(all<any>(`SELECT i.packing_id, GROUP_CONCAT(DISTINCT COALESCE(o.order_no, '#' || o.id)) AS order_nos,
+      ROUND(SUM(i.quantity * COALESCE(oi.unit_price, 0)), 2) AS goods_value
+    FROM packing_items i JOIN order_items oi ON oi.id = i.order_item_id JOIN orders o ON o.id = oi.order_id
+    JOIN packings p ON p.id = i.packing_id WHERE p.shipment_id = ? AND p.customer_id = ? GROUP BY i.packing_id`, [shipmentId, customerId])
+    .map((g) => [g.packing_id, g]));
+  for (const p of packings) { const g = goods.get(p.id); p.order_nos = g?.order_nos || null; p.goods_value = g ? g.goods_value : null; }
+  const goods_value = round2(packings.reduce((s, p) => s + (p.goods_value || 0), 0));
   const others = all<any>('SELECT * FROM shipment_other_amounts WHERE shipment_id = ? AND customer_id = ? ORDER BY id', [shipmentId, customerId]);
   const shipping = round2(packings.reduce((s, p) => s + p.price, 0));
   const other = round2(others.reduce((s, o) => s + o.amount, 0));
-  return { rates, packings, others, shipping, other, total: round2(shipping + other) };
+  return { rates, packings, others, shipping, other, goods_value, total: round2(shipping + other) };
 }
 
 /** Box code: PK + running number, e.g. PK0067. Unique; printed as the barcode. */

@@ -239,6 +239,8 @@ export function ShippingBill({ d, hidePrice = false }: { d: any; hidePrice?: boo
   const { lookups } = useApp();
   const addr = d.addresses?.[0];
   const cur = d.currency === 'CNY' ? '¥' : '฿';
+  // boxes packed from orders show the order no. and the goods value in that box (order unit price × packed qty, yuan)
+  const fromOrders = d.packings.some((p: any) => p.order_nos);
   return (
     <div className="doc">
       <div className="doc-head">
@@ -247,13 +249,13 @@ export function ShippingBill({ d, hidePrice = false }: { d: any; hidePrice?: boo
         <div style={{ textAlign: 'right' }}><b>{d.customer?.code}</b> {d.customer?.firstname} {d.customer?.lastname}<br />{d.customer?.phone}<br />{addr ? `${addr.address} ${addr.province || ''} ${addr.postcode || ''}` : ''}</div>
       </div>
       <table>
-        <thead><tr><th>CTN</th><th>{t('Box', 'เลขกระสอบ', '包号')}</th><th>kg</th><th>cm</th><th>m³</th>{!hidePrice && <><th>{t('Basis', 'คิดตาม', '计算')}</th><th>{t('Rate', 'เรท', '单价')}</th><th>{t('Price', 'ราคา', '价格')}</th></>}</tr></thead>
+        <thead><tr><th>CTN</th><th>{t('Box', 'เลขกระสอบ', '包号')}</th>{fromOrders && <><th>{t('Order no.', 'เลขออเดอร์', '订单号')}</th><th>{t('Goods value', 'มูลค่าสินค้า', '货值')} ¥</th></>}<th>kg</th><th>cm</th><th>m³</th>{!hidePrice && <><th>{t('Basis', 'คิดตาม', '计算')}</th><th>{t('Rate', 'เรท', '单价')}</th><th>{t('Price', 'ราคา', '价格')}</th></>}</tr></thead>
         <tbody>
-          {d.packings.map((p: any) => <tr key={p.id}><td>{p.ctn}/{p.no}</td><td>{p.packing_code}</td><td>{p.weight}</td><td>{p.cubic1}×{p.cubic2}×{p.cubic3}</td><td>{p.cbm.toFixed(4)}</td>{!hidePrice && <><td>{p.basis}</td><td>{money(p.rate)}</td><td>{money(p.price)}</td></>}</tr>)}
-          {d.others.map((o: any) => <tr key={`o${o.id}`}><td colSpan={hidePrice ? 4 : 7}>{o.detail}</td><td>{money(o.amount)}</td></tr>)}
+          {d.packings.map((p: any) => <tr key={p.id}><td>{p.ctn}/{p.no}</td><td>{p.packing_code}</td>{fromOrders && <><td>{p.order_nos || ''}</td><td>{p.goods_value != null ? money(p.goods_value) : ''}</td></>}<td>{p.weight}</td><td>{p.cubic1}×{p.cubic2}×{p.cubic3}</td><td>{p.cbm.toFixed(4)}</td>{!hidePrice && <><td>{p.basis}</td><td>{money(p.rate)}</td><td>{money(p.price)}</td></>}</tr>)}
+          {d.others.map((o: any) => <tr key={`o${o.id}`}><td colSpan={(hidePrice ? 4 : 7) + (fromOrders ? 2 : 0)}>{o.detail}</td><td>{money(o.amount)}</td></tr>)}
         </tbody>
       </table>
-      <div className="total-line"><span>{t('Shipping', 'ค่าขนส่ง', '运费')} {cur}{money(d.shipping)}</span><span>{t('Other', 'อื่นๆ', '其他')} {cur}{money(d.other)}</span><span>{t('Total', 'รวม', '总价')} {cur}{money(d.total)}</span></div>
+      <div className="total-line">{fromOrders && <span>{t('Goods value', 'มูลค่าสินค้า', '货值')} ¥{money(d.goods_value || 0)}</span>}<span>{t('Shipping', 'ค่าขนส่ง', '运费')} {cur}{money(d.shipping)}</span><span>{t('Other', 'อื่นๆ', '其他')} {cur}{money(d.other)}</span><span>{t('Total', 'รวม', '总价')} {cur}{money(d.total)}</span></div>
     </div>
   );
 }
@@ -321,6 +323,8 @@ export function ShipmentSummary() {
               <p className="muted">{t('Rule', 'คิดตาม', '计算')}: {d.rates.calc_type} · kg {money(d.currency === 'CNY' ? d.rates.kilo_yuan : d.rates.kilo)} · m³ {money(d.currency === 'CNY' ? d.rates.cubic_yuan : d.rates.cubic)}</p>
               <Table rows={d.packings} selectable={posted ? undefined : () => true} selected={boxSel} onSelect={setBoxSel} onRow={(r) => !posted && setRateEdit({ id: r.id, rate_type: r.rate_type || '', rate: r.rate_type ? r.rate : '', weight: r.weight, cubic1: r.cubic1, cubic2: r.cubic2, cubic3: r.cubic3 })} columns={[
                 { key: 'packing_code', label: t('Box', 'เลขกระสอบ', '包号') },
+                { key: 'order_nos', label: t('Order no.', 'เลขออเดอร์', '订单号'), render: (r) => <span className="clip">{r.order_nos || ''}</span> },
+                { key: 'goods_value', label: `${t('Goods value', 'มูลค่าสินค้า', '货值')} ¥`, money: true, sum: true },
                 { key: 'weight', label: 'kg', align: 'right' },
                 { key: 'cbm', label: 'm³', render: (r) => r.cbm.toFixed(4), align: 'right' },
                 { key: 'basis', label: t('Basis', 'คิดตาม', '计算'), render: (r) => <>{r.basis}{r.rate_type ? <Pencil size={12} aria-label="custom rate" style={{ marginLeft: 4 }} /> : ''}</> },
@@ -339,7 +343,7 @@ export function ShipmentSummary() {
                   <button onClick={async () => { if (await run(() => api('/r/shipment_other_amounts', { body: { ...other, shipment_id: sid, customer_id: cid } }))) { setOther({ detail: '', amount: '' }); reloadAll(); } }}><Plus size={16} aria-hidden /> {t('Add', 'เพิ่ม', '加')}</button>
                 </div>
               )}
-              <div className="total-line"><span>{t('Shipping', 'ค่าขนส่ง', '运费')} {money(d.shipping)}</span><span>{t('Other', 'อื่นๆ', '其他')} {money(d.other)}</span><span>{t('Total', 'รวม', '总价')} {money(d.total)} {d.currency}</span></div>
+              <div className="total-line">{d.packings.some((p: any) => p.order_nos) && <span>{t('Goods value', 'มูลค่าสินค้า', '货值')} ¥{money(d.goods_value || 0)}</span>}<span>{t('Shipping', 'ค่าขนส่ง', '运费')} {money(d.shipping)}</span><span>{t('Other', 'อื่นๆ', '其他')} {money(d.other)}</span><span>{t('Total', 'รวม', '总价')} {money(d.total)} {d.currency}</span></div>
             </Card>
           )}
         </div>
