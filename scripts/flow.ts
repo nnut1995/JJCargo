@@ -230,6 +230,19 @@ export async function runFlow(call: Call, log = (_: string) => {}) {
   assert.ok(grp.some((g: any) => g.sacks && g.boxes === 1) && grp.find((g: any) => g.customer_id === b.id).boxes === 2);
   assert.deepEqual((await call(`/packing?shipment_id=${ship2.id}&sacks=1`)).map((x: any) => x.id), [bag.id]);
   await call(`/shipments/${ship2.id}/summary/${b.id}`, { body: { currency: 'THB' }, expect: 409 });
+  // shipping bill: a box packed from an order shows its order no. and goods value (3 × ¥10); boxes without orders show none
+  const ship3 = await call('/r/shipments', { body: { code: 'JJ-ORD-' + d.replace(/-/g, ''), date: d, transport: 'truck' } });
+  await call('/orders', { body: { customer_id: b.id, order_no: 'TB-BILL3', order_date: d, items: [{ product_id: 'X-3', style_id: shoes.id, quantity: 5, unit_price: 10 }] } });
+  const ordLine = (await call(`/packing/waiting?order_id=TB-BILL3`))[0];
+  const pk3 = await call('/packing', { body: { customer_id: b.id, items: [{ order_item_id: ordLine.id, quantity: 3 }] } });
+  const plain = await call('/packing', { body: { customer_id: b.id, boxes: 1 } });
+  for (const p of [pk3.created[0], plain.created[0]]) await call(`/shipments/${ship3.id}/load`, { body: { code: p.code, date: d } });
+  const bill3 = await call(`/shipments/${ship3.id}/summary/${b.id}`);
+  const ordBox = bill3.packings.find((x: any) => x.id === pk3.created[0].id);
+  assert.equal(ordBox.order_nos, 'TB-BILL3');
+  assert.equal(ordBox.goods_value, 30);
+  assert.equal(bill3.packings.find((x: any) => x.id === plain.created[0].id).goods_value, null);
+  assert.equal(bill3.goods_value, 30);
   // the sack is never billed: summary boxes / kg / charges count parcels only (sack weighed 40 kg here)
   await call(`/packing/${bag.id}`, { method: 'PUT', body: { weight: 40, cubic1: 100, cubic2: 100, cubic3: 100 } });
   const s2 = await call(`/shipments/${ship2.id}/summary`);
